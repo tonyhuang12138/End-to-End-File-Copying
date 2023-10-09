@@ -44,7 +44,6 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-# define MAX_MSG_LEN 512
 
 bool isDirectory(char *dirname);
 
@@ -90,7 +89,7 @@ int main(int argc, char *argv[]) {
         } else {
             while (dirent *f = readdir(SRC)) {
                 char path[500];
-                char filenamePacket[100];
+                char outgoingPacket[55];
                 sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
 
                 // skip everything all subdirectories
@@ -98,19 +97,25 @@ int main(int argc, char *argv[]) {
                     continue; 
                 }
 
-                memcpy(filenamePacket, f->d_name, sizeof(f->d_name));
-                // cout << strcmp(f->d_name, filenamePacket) << endl;
-                printf("File: %s\n", filenamePacket);
-                
-                // We need to see each time a client attempts to send a new file, each time a server starts writing a new file, when transmission of a file completes at the client, when end to end checks succeed and fail, etc.
+                FilenamePacket filenamePacket;
+                cout << strlen(f->d_name) + 1 << endl;
+                memcpy(filenamePacket.filename, f->d_name, strlen(f->d_name) + 1);
+                cout << "strcmp " << strcmp(f->d_name, filenamePacket.filename) << endl;
+                cout << filenamePacket.packetType << " " << filenamePacket.filename << endl;
+                memcpy(outgoingPacket, &filenamePacket, sizeof(filenamePacket));
+
+                printf("%s %ld %ld\n", outgoingPacket, strlen(outgoingPacket), sizeof(outgoingPacket));
 
                 // Start sending
-                *GRADING << "File: <" << filenamePacket << ">, beginning transmission, attempt <" << 1 << ">" << endl;
+                // TODO: keep the angled brackets??
+                *GRADING << "File: <" << filenamePacket.filename << ">, beginning transmission, attempt <" << 1 << ">" << endl;
+
 
                 // write
-                sock -> write(filenamePacket, strlen(filenamePacket) + 1); // +1 includes the null
+                cout << "write len " <<  sizeof(outgoingPacket) << endl;
+                sock -> write(outgoingPacket, sizeof(outgoingPacket)); // +1 includes the null
 
-                *GRADING << "File: <" << filenamePacket << "> transmission complete, waiting for end-to-end check, attempt <" << 1 << ">" << endl;
+                *GRADING << "File: <" << filenamePacket.filename << "> transmission complete, waiting for end-to-end check, attempt <" << 1 << ">" << endl;
             }
         } 
         closedir(SRC);
