@@ -85,9 +85,9 @@ int main(int argc, char *argv[])  {
             fprintf(stderr,"Error opening source directory %s\n", argv[targetdirArg]);     
             exit(8);
         } else {
-
-            // recursively process request send to server
             // TODO: don't think this is while 1; need to investigate
+            string filename;
+            int packetType;
             while (1) {
                 //
                 // Read a packet
@@ -100,26 +100,18 @@ int main(int argc, char *argv[])  {
                     continue;
                 }
 
-                // testing:
-                
-
-
-
-                // TODO: reverse stringfy the incoming message to be a struct
-                // extract packet type from packet
-                char packetTypeArr[PACKET_TYPE_LEN];
-                memcpy(packetTypeArr, incomingMessage, PACKET_TYPE_LEN);
-                packetTypeArr[PACKET_TYPE_LEN] = '\0'; /* Add terminator */
-                int packetType = atoi(packetTypeArr);
-                printf("packetTypeArr %s %d\n", packetTypeArr, packetType);
+                // extract packet type from incoming message
+                memcpy(&packetType, incomingMessage, sizeof(int));
+                printf("packetTypeArr %s %d\n", incomingMessage, packetType);
                 
                 // ask struct name
                 switch (packetType) {
-                    case 0: { // FilenamePacket 
-                            FilenamePacket *filename = reinterpret_cast<FilenamePacket *>(incomingMessage);
-                            printf("Received incoming packet with filename %s\n", filename->filename);
+                    case 1: { // FilenamePacket 
+                            FilenamePacket *filenamePacket = reinterpret_cast<FilenamePacket *>(incomingMessage);
+                            filename = filenamePacket->filename;
+                            printf("Received incoming packet with filename %s\n", filename.c_str());
                             
-                            *GRADING << "File: <" << incomingMessage << "> starting to receive file" << endl;
+                            *GRADING << "File: <" << filename << "> starting to receive file" << endl;
                         }                
                         break;
                     case 2:               // ChecksumPacket  
@@ -141,7 +133,7 @@ int main(int argc, char *argv[])  {
 
                 // receiving...
 
-                *GRADING << "File: <" << incomingMessage << "> received, beginning end-to-end check" << endl;
+                *GRADING << "File: <" << filename << "> received, beginning end-to-end check" << endl;
 
                 // begin end-to-end check
                 // send msg and wait for timeout to counter network nastiness

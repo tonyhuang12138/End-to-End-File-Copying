@@ -97,6 +97,7 @@ int main(int argc, char *argv[]) {
                     continue; 
                 }
 
+                // TODO: is memcpy dangerous?
                 FilenamePacket filenamePacket;
                 cout << strlen(f->d_name) + 1 << endl;
                 memcpy(filenamePacket.filename, f->d_name, strlen(f->d_name) + 1);
