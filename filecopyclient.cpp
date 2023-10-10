@@ -98,9 +98,10 @@ int main(int argc, char *argv[]) {
                     continue; 
                 }
 
-                sendDataPacket(&sock, f->d_name);
+                // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
 
-                // the final submission should include a while loop to send all packets of a file. here we are sending a dummy data packet to simulate data transmission complete.
+                // timeout logic
+                sendDataPacket(&sock, f->d_name);
             }
         } 
         closedir(SRC);
@@ -156,6 +157,7 @@ void sendDataPacket(C150DgmSocket **sock, char filename[]) {
     char outgoingPacket[MAX_PKT_LEN];
     DataPacket dataPacket;
 
+    // TODO: hardcoding only for the end to end submission, change later
     dataPacket.numTotalPackets = 1;
     dataPacket.packetNumber = 1;
 
@@ -163,17 +165,18 @@ void sendDataPacket(C150DgmSocket **sock, char filename[]) {
     memcpy(dataPacket.filename, filename, strlen(filename) + 1);
     cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
     cout << dataPacket.packetType << " " << dataPacket.filename << endl;
+    // TODO: do we still need to consider the +1 if char arr is in struct?
     memcpy(outgoingPacket, &dataPacket, sizeof(dataPacket));
 
     printf("%s %ld %ld\n", outgoingPacket, strlen(outgoingPacket), sizeof(outgoingPacket));
 
     // Start sending
     // TODO: keep the angled brackets??
-    *GRADING << "File: <" << dataPacket.filename << ">, beginning transmission, attempt <" << 1 << ">" << endl;
+    *GRADING << "File: " << dataPacket.filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     // write
     cout << "write len " <<  sizeof(outgoingPacket) << endl;
     (*sock) -> write(outgoingPacket, sizeof(outgoingPacket)); // +1 includes the null
 
-    *GRADING << "File: <" << dataPacket.filename << "> transmission complete, waiting for end-to-end check, attempt <" << 1 << ">" << endl;
+    *GRADING << "File: " << dataPacket.filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
 }
