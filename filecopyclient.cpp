@@ -39,13 +39,14 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <assert.h>
 // #include <string.h>
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-
 bool isDirectory(char *dirname);
+void sendDataPacket(C150DgmSocket **sock, char filename[]);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -89,7 +90,7 @@ int main(int argc, char *argv[]) {
         } else {
             while (dirent *f = readdir(SRC)) {
                 char path[500];
-                char outgoingPacket[55];
+
                 sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
 
                 // skip everything all subdirectories
@@ -97,26 +98,9 @@ int main(int argc, char *argv[]) {
                     continue; 
                 }
 
-                // TODO: is memcpy dangerous?
-                FilenamePacket filenamePacket;
-                cout << strlen(f->d_name) + 1 << endl;
-                memcpy(filenamePacket.filename, f->d_name, strlen(f->d_name) + 1);
-                cout << "strcmp " << strcmp(f->d_name, filenamePacket.filename) << endl;
-                cout << filenamePacket.packetType << " " << filenamePacket.filename << endl;
-                memcpy(outgoingPacket, &filenamePacket, sizeof(filenamePacket));
+                sendDataPacket(&sock, f->d_name);
 
-                printf("%s %ld %ld\n", outgoingPacket, strlen(outgoingPacket), sizeof(outgoingPacket));
-
-                // Start sending
-                // TODO: keep the angled brackets??
-                *GRADING << "File: <" << filenamePacket.filename << ">, beginning transmission, attempt <" << 1 << ">" << endl;
-
-
-                // write
-                cout << "write len " <<  sizeof(outgoingPacket) << endl;
-                sock -> write(outgoingPacket, sizeof(outgoingPacket)); // +1 includes the null
-
-                *GRADING << "File: <" << filenamePacket.filename << "> transmission complete, waiting for end-to-end check, attempt <" << 1 << ">" << endl;
+                // the final submission should include a while loop to send all packets of a file. here we are sending a dummy data packet to simulate data transmission complete.
             }
         } 
         closedir(SRC);
@@ -137,6 +121,7 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+
 // ------------------------------------------------------
 //
 //                   isDirectory
@@ -151,4 +136,44 @@ bool isDirectory(char *dirname) {
     if (stat(dirname, &statbuf) != 0)
         return 0;
     return S_ISDIR(statbuf.st_mode);
+}
+
+
+// ------------------------------------------------------
+//
+//                   sendDataPacket
+//
+//  Given a filename, send the parts of the data as a packet 
+//  to the server
+//     
+// ------------------------------------------------------
+void sendDataPacket(C150DgmSocket **sock, char filename[]) {
+    // maybe remove it in final submission?
+    assert(sock != NULL && *sock != NULL);
+    assert(filename != NULL);
+
+    // TODO: is memcpy dangerous?
+    char outgoingPacket[MAX_PKT_LEN];
+    DataPacket dataPacket;
+
+    dataPacket.numTotalPackets = 1;
+    dataPacket.packetNumber = 1;
+
+    cout << strlen(filename) + 1 << endl;
+    memcpy(dataPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
+    cout << dataPacket.packetType << " " << dataPacket.filename << endl;
+    memcpy(outgoingPacket, &dataPacket, sizeof(dataPacket));
+
+    printf("%s %ld %ld\n", outgoingPacket, strlen(outgoingPacket), sizeof(outgoingPacket));
+
+    // Start sending
+    // TODO: keep the angled brackets??
+    *GRADING << "File: <" << dataPacket.filename << ">, beginning transmission, attempt <" << 1 << ">" << endl;
+
+    // write
+    cout << "write len " <<  sizeof(outgoingPacket) << endl;
+    (*sock) -> write(outgoingPacket, sizeof(outgoingPacket)); // +1 includes the null
+
+    *GRADING << "File: <" << dataPacket.filename << "> transmission complete, waiting for end-to-end check, attempt <" << 1 << ">" << endl;
 }

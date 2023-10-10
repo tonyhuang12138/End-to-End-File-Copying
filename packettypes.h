@@ -6,15 +6,17 @@
 #define CHECKSUMCMP_PACKET_TYPE 3
 #define DATA_PACKET_TYPE 4
 
-#define MAX_MSG_LEN 512
+#define MAX_PKT_LEN 512
 #define PACKET_TYPE_OFFSET 0
 #define PACKET_TYPE_LEN 4
 
-
-struct FilenamePacket {
-    int packetType = 1;               // Question: should we do this in 
-                                            // child struct?
+// subject to change
+struct DataPacket {
+    const int packetType = 1;
+    int numTotalPackets;
+    int packetNumber;
     char filename[50]; // investigate safety hazard: when buffer size is 1 it still worked; why didn't it overflow?
+    // char data[412];
 };
 
 struct ChecksumPacket {
@@ -25,13 +27,6 @@ struct ChecksumPacket {
 struct ChecksumComparisonPacket {
     const int packetType = 3;
     bool result;
-};
-
-// subject to change
-struct DataPacket {
-    const int packetType = 4;
-    char header[100];
-    char data[412];
 };
 
 #endif

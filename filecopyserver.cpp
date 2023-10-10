@@ -105,26 +105,65 @@ int main(int argc, char *argv[])  {
                 printf("packetTypeArr %s %d\n", incomingMessage, packetType);
                 
                 // ask struct name
-                switch (packetType) {
-                    case 1: { // FilenamePacket 
-                            FilenamePacket *filenamePacket = reinterpret_cast<FilenamePacket *>(incomingMessage);
-                            filename = filenamePacket->filename;
+                switch (packetType) { 
+                    case 1: { // DataPacket 
+                        printf("DataPacket\n");
+                            DataPacket *dataPacket = reinterpret_cast<DataPacket *>(incomingMessage);
+                            filename = dataPacket->filename;
                             printf("Received incoming packet with filename %s\n", filename.c_str());
                             
                             *GRADING << "File: <" << filename << "> starting to receive file" << endl;
+
+                            // TODO: remove the following comment
+                            // 
                         }                
                         break;
-                    case 2:               // ChecksumPacket  
-                        printf("ChecksumPacket\n");
-                        break;
-
-                    case 3:               // ChecksumComparisonPacket   
-                        printf("ChecksumComparisonPacket\n");
-                        break;
                         
-                    case 4:               // DataPacket   
-                        printf("DataPacket\n");
+                    case 2: {
+                        // check if received all packets of file
+                        // if so, start checksum
+                        // *GRADING << "File: <" << filename << "> received, beginning end-to-end check" << endl;
+                        // 
+
+                        
+                        // TODO:
+                        // 0. Modularize? -> sendFilenamePacket(); sendDataPacket()
+                        // 1. Client send dummy data packet with totalPacketNumber = 1 to symbolize file transmission complete
+                        // 2. Calculate sha1 and send to client
+                        //    - wait
+
+                        while (1) { // Question: can we modularize read packet later?
+                            //
+                            // Read a packet
+                            // -1 in size below is to leave room for null
+                            //
+                            readlen = sock -> read(incomingMessage, sizeof(incomingMessage));
+
+                            if (readlen == 0) {
+                                c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
+                                continue;
+                            }
+
+                            // extract packet type from incoming message
+                            memcpy(&packetType, incomingMessage, sizeof(int));
+                            printf("packetTypeArr %s %d\n", incomingMessage, packetType);
+
+                            if (packetType == 4) { // Note: this is the num for ChecksumComparisonPacket
+                                // TODO: Compute Sha1code for the local file
+
+                                // TODO: Send a checksum packet back
+
+                                // TODO: wait (loop here) for the client response 
+                            }
+                        }
+                    
+                    // investigation: will it fall through to other cases?
+
+                        }
                         break;
+                    default: {
+                        // debug log it
+                        }
                 }
 
 
@@ -133,7 +172,7 @@ int main(int argc, char *argv[])  {
 
                 // receiving...
 
-                *GRADING << "File: <" << filename << "> received, beginning end-to-end check" << endl;
+                
 
                 // begin end-to-end check
                 // send msg and wait for timeout to counter network nastiness
@@ -157,4 +196,20 @@ int main(int argc, char *argv[])  {
     }
     
     return 0;
+}
+
+
+
+// ------------------------------------------------------
+//
+//                   computeSha1code
+//
+//  Given a filename, compute the Sha1code of that file
+//     
+// ------------------------------------------------------
+
+string computeSha1code (string filename, int nastiness) {
+    C150NastyFile stream(nastiness);
+
+    return "";
 }
