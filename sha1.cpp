@@ -42,6 +42,9 @@ void sha1() {
 	string filename = "Makefile";
 	FILE* infile = fopen(filename.c_str(), "rb");
 
+	// TODO: what is the proper way of reading into buffer?
+	// Why is rewind dangerous?
+
 
 	// // traverse infile and return its size
 	// fseek(infile, 0, SEEK_END);
@@ -61,7 +64,7 @@ void sha1() {
 
 	// read infile into char buffer
 	size_t bytesRead = fread(buffer, 1, 2527, infile);
-	buffer[2528] = '\0';
+	// buffer[2528] = '\0';
 
 	cout << "Bytes read is " << bytesRead << endl;
 
