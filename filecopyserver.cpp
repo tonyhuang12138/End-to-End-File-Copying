@@ -78,7 +78,7 @@ int main(int argc, char *argv[])  {
             fprintf(stderr,"Error opening target directory %s\n", argv[targetdirArg]);     
             exit(8);
         } 
-        
+
         receiveDataPackets(&output, &sock);
         closedir(SRC);
     // TODO: can the exception thrown within receiveDataPackets be caught?
@@ -117,18 +117,16 @@ void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
         // -1 in size below is to leave room for null
         //
         readlen = (*sock) -> read(incomingPacket, sizeof(incomingPacket));
-        // validate received packet
+        // ignore empty packets
         if (readlen == 0) {
             c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
             continue;
         }
 
         packetType = getPacketType(incomingPacket);
-        // validate packet type
+        // ignore unexpected packets
         if (packetType != DATA_PACKET_TYPE) {
             fprintf(stderr,"Should be receiving data packets but packet of packetType %d received.\n", packetType);
-            // TODO: remove for final submission
-            // exit(100);
             continue;
         }
 
@@ -142,6 +140,7 @@ void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
             filename = dataPacket->filename;
         } else if (filename != dataPacket->filename) {
             fprintf(stderr,"Should be receiving packets of file %s, but received packets from file %s\n", filename.c_str(), dataPacket->filename);
+            continue;
         }
 
         printf("Received incoming packet with filename %s\n", filename.c_str());
@@ -193,36 +192,41 @@ int getPacketType(char incomingPacket[]) {
 //  calculate and send checksum as a packet to client
 //     
 // ------------------------------------------------------
-// void sendChecksumPacket() {
-//     // File: <name> end-to-end check succeeded
-//     // File: <name> end-to-end check failed
+void sendChecksumPacket() {
+    // File: <name> end-to-end check succeeded
+    // File: <name> end-to-end check failed
+
+    ChecksumPacket checksumPacket;
+    
+
+    
 
 
-//     while (1) { // Question: can we modularize read packet later?
-//         //
-//         // Read a packet
-//         // -1 in size below is to leave room for null
-//         //
-//         readlen = sock -> read(incomingPacket, sizeof(incomingPacket));
+    // while (1) { // Question: can we modularize read packet later?
+    //     //
+    //     // Read a packet
+    //     // -1 in size below is to leave room for null
+    //     //
+    //     readlen = sock -> read(incomingPacket, sizeof(incomingPacket));
 
-//         if (readlen == 0) {
-//             c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
-//             continue;
-//         }
+    //     if (readlen == 0) {
+    //         c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
+    //         continue;
+    //     }
 
-//         packetType = getPacketType(incomingPacket);
+    //     packetType = getPacketType(incomingPacket);
 
-//         if (packetType != CHECKSUMCMP_PACKET_TYPE) { 
-//             fprintf(stderr,"Should be receiving data packets but packet of packetType %d received.\n", filename.c_str(), packetType);
-//         }
-//         // Note: this is the num for ChecksumComparisonPacket
-//         // TODO: Compute Sha1code for the local file
+    //     if (packetType != CHECKSUMCMP_PACKET_TYPE) { 
+    //         fprintf(stderr,"Should be receiving data packets but packet of packetType %d received.\n", filename.c_str(), packetType);
+    //     }
+    //     // Note: this is the num for ChecksumComparisonPacket
+    //     // TODO: Compute Sha1code for the local file
 
-//         // TODO: Send a checksum packet back
+    //     // TODO: Send a checksum packet back
 
-//         // TODO: wait (loop here) for the client response 
-//     }
-// }
+    //     // TODO: wait (loop here) for the client response 
+    // }
+}
 
 // ------------------------------------------------------
 //

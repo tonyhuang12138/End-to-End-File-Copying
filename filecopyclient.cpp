@@ -45,8 +45,12 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
+# define MAX_RETRIES 5
+
 bool isDirectory(char *dirname);
-void sendDataPacket(C150DgmSocket **sock, char filename[]);
+void copyFile(C150DgmSocket **sock, char filename[]);
+void sendDataPacket(C150DgmSocket **sock, char filename[], 
+                      char outgoingPacket[MAX_PKT_LEN]);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -87,23 +91,24 @@ int main(int argc, char *argv[]) {
         if (SRC == NULL) {
             fprintf(stderr,"Error opening source directory %s\n", argv[srcdirArg]);     
             exit(8);
-        } else {
-            while (dirent *f = readdir(SRC)) {
-                char path[500];
+        }
 
-                sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
+        while (dirent *f = readdir(SRC)) {
+            char path[500];
 
-                // skip everything all subdirectories
-                if (!f->d_name || isDirectory(path)) {
-                    continue; 
-                }
+            sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
 
-                // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
-
-                // timeout logic
-                sendDataPacket(&sock, f->d_name);
+            // skip all subdirectories
+            if (!f->d_name || isDirectory(path)) {
+                continue; 
             }
-        } 
+
+            // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
+
+            // timeout logic
+            copyFile(&sock, f->d_name);
+        }
+
         closedir(SRC);
     }
     //
@@ -128,6 +133,8 @@ int main(int argc, char *argv[]) {
 //                   isDirectory
 //
 //  Check if the supplied file name is a directory
+//  
+//  See references up top
 //     
 // ------------------------------------------------------
 
@@ -139,21 +146,86 @@ bool isDirectory(char *dirname) {
     return S_ISDIR(statbuf.st_mode);
 }
 
+// ------------------------------------------------------
+//
+//                   copyFile
+//
+//  Given a filename, copy it to server
+//     
+// ------------------------------------------------------
+void copyFile(C150DgmSocket **sock, char filename[]) {
+    //
+    // Variable declarations
+    //
+    ssize_t readlen;              // amount of data read from socket
+    char incomingPacket[MAX_PKT_LEN];
+    char outgoingPacket[MAX_PKT_LEN]; // TODO: null terminate this?
+    int retry_i = 0;
+    bool timeoutStatus;
+
+    // Start sending
+    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
+
+    sendDataPacket(sock, filename, outgoingPacket);
+
+    // Read the response from the server
+    // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+    readlen = (*sock) -> read(incomingPacket, sizeof(incomingPacket));
+    timeoutStatus = (*sock) -> timedout();
+
+    // keep resending message up to MAX_RETRIES times when read timedout
+    retry_i = 0;
+    while (retry_i < MAX_RETRIES && timeoutStatus == true) {
+        // Send the message to the server
+        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
+        //                 argv[0], outgoingMsg);
+        (*sock) -> write(outgoingPacket, sizeof(outgoingPacket));
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+        readlen = (*sock) -> read(incomingPacket, 
+                                sizeof(incomingPacket));
+        timeoutStatus = (*sock) -> timedout();
+
+        retry_i++;
+    }
+
+    // throw exception if all retries exceeded
+    if (retry_i == MAX_RETRIES) {
+        throw C150NetworkException("Timed out after 5 retries.");
+    }
+
+    // keep reading until timeout if read is successful
+    while (timeoutStatus != true) {
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: more reads - Returned from write, doing read()", argv[0]);
+        readlen = (*sock) -> read(incomingPacket, sizeof(incomingPacket));
+        timeoutStatus = (*sock) -> timedout();
+    }
+
+    timeoutStatus = false;
+    (void) readlen;
+    
+    *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
+}
+
 
 // ------------------------------------------------------
 //
 //                   sendDataPacket
 //
 //  Given a filename, send the parts of the data as a packet 
-//  to the server
+//  to the server and write to outgoingPacket
 //     
 // ------------------------------------------------------
-void sendDataPacket(C150DgmSocket **sock, char filename[]) {
+void sendDataPacket(C150DgmSocket **sock, char filename[], 
+                      char outgoingPacket2[MAX_PKT_LEN]) {
     // maybe remove it in final submission?
     assert(sock != NULL && *sock != NULL);
     assert(filename != NULL);
 
-    // TODO: is memcpy dangerous?
+    // TODO: is memcpy dangerous? +1 strlen?
     char outgoingPacket[MAX_PKT_LEN];
     DataPacket dataPacket;
 
@@ -168,15 +240,11 @@ void sendDataPacket(C150DgmSocket **sock, char filename[]) {
     // TODO: do we still need to consider the +1 if char arr is in struct?
     memcpy(outgoingPacket, &dataPacket, sizeof(dataPacket));
 
-    printf("%s %ld %ld\n", outgoingPacket, strlen(outgoingPacket), sizeof(outgoingPacket));
+    // TODO: testing; change name!
+    memcpy(outgoingPacket2, outgoingPacket, sizeof(outgoingPacket));
 
-    // Start sending
-    // TODO: keep the angled brackets??
-    *GRADING << "File: " << dataPacket.filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     // write
     cout << "write len " <<  sizeof(outgoingPacket) << endl;
-    (*sock) -> write(outgoingPacket, sizeof(outgoingPacket)); // +1 includes the null
-
-    *GRADING << "File: " << dataPacket.filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
+    (*sock) -> write(outgoingPacket, sizeof(outgoingPacket));
 }
