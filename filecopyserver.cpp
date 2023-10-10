@@ -43,6 +43,7 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock);
 int getPacketType(char incomingPacket[]);
+string computeSha1code (char filename[], int nastiness);
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
 const int filenastinessArg = 2;           // filenastiness is 2nd arg
@@ -52,12 +53,6 @@ const int targetdirArg = 3;               // targetdir is 3rd arg
 
   
 int main(int argc, char *argv[])  {
-    // validate input format
-    if (argc != 4) {
-        fprintf(stderr,"Correct syntax is: %s <networknastiness> <filenastiness> <targetdir>\n", argv[0]);
-        exit(1);
-    }
-
     //
     //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     //
@@ -70,6 +65,12 @@ int main(int argc, char *argv[])  {
     // create file stream and socket
     NASTYFILE output(filenastiness);
     C150DgmSocket *sock = new C150NastyDgmSocket(networknastiness);
+
+    // validate input format
+    if (argc != 4) {
+        fprintf(stderr,"Correct syntax is: %s <networknastiness> <filenastiness> <targetdir>\n", argv[0]);
+        exit(1);
+    }
 
     try {
         // open target dir
@@ -136,19 +137,10 @@ void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
         assert(packetType == dataPacket->packetType);
 
         // check if packet belongs to expected file
-        cout << "hii\n";
-        printf("type %d ", dataPacket->packetType);
-        printf("total %d ", dataPacket-> numTotalPackets);
-        printf("num %d ", dataPacket-> packetNumber);
-        printf("name %s\n", dataPacket->filename.c_str());
         if (filename == "") {
-            printf("%s\n", dataPacket->filename.c_str());
-            cout <<"expect seg fault" << endl;
-            cout << "Setting filename to " << dataPacket->filename << endl;
             filename = dataPacket->filename;
-            cout <<"didn't seg fault" << endl;
         } else if (filename != dataPacket->filename) {
-            fprintf(stderr,"Should be receiving packets of file %s, but received packets from file %s\n", filename.c_str(), dataPacket->filename.c_str());
+            fprintf(stderr,"Should be receiving packets of file %s, but received packets from file %s\n", filename.c_str(), dataPacket->filename);
             continue;
         }
 
@@ -188,7 +180,7 @@ void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
 int getPacketType(char incomingPacket[]) {
     int packetType;
     memcpy(&packetType, incomingPacket, sizeof(int));
-    printf("Packet type is %d\n", packetType);
+    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
     
     return packetType;
 }
@@ -247,8 +239,9 @@ void sendChecksumPacket() {
 //  Given a filename, compute the Sha1code of that file
 //     
 // ------------------------------------------------------
+// TODO: filename will be changed to string later
 
-string computeSha1code (string filename, int nastiness) {
+string computeSha1code (char filename[], int nastiness) {
     NASTYFILE stream(nastiness);
 
     return "";

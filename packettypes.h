@@ -1,10 +1,6 @@
 #ifndef PACKETTYPES_H
 #define PACKETTYPES_H
 
-#include <string>
-
-using namespace std;
-
 #define DATA_PACKET_TYPE 1
 #define CHECKSUM_PACKET_TYPE 2
 #define CHECKSUMCMP_PACKET_TYPE 3
@@ -18,8 +14,8 @@ struct DataPacket {
     const int packetType = 1;
     int numTotalPackets;
     int packetNumber;
-    string filename;
-    // char filename[50]; // investigate safety hazard: when buffer size is 1 it still worked; why didn't it overflow?
+    // string filename;
+    char filename[50]; // investigate safety hazard: when buffer size is 1 it still worked; why didn't it overflow?
     // char data[412];
 };
 

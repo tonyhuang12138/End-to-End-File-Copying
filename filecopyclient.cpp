@@ -40,7 +40,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
-#include <string>
+// #include <string.h>
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
@@ -48,8 +48,8 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 # define MAX_RETRIES 5
 
 bool isDirectory(char *dirname);
-void copyFile(C150DgmSocket **sock, string filename);
-void sendDataPacket(C150DgmSocket **sock, string filename, 
+void copyFile(C150DgmSocket **sock, char filename[]);
+void sendDataPacket(C150DgmSocket **sock, char filename[], 
                       char outgoingPacket[MAX_PKT_LEN]);
 
 const int serverArg = 1;                  // server name is 1st arg
@@ -102,15 +102,16 @@ int main(int argc, char *argv[]) {
             }
 
             // can there be null characters in a filename?
-            printf("%ld", strlen(f->d_name));
-            string filename = f->d_name;
-            printf("%s, %ld\n", filename.c_str(), filename.length());
+            // printf("%ld\n", strlen(f->d_name));
+            // string filename;
+            // strcpy(filename, f->d_name);
+            // printf("%s\n", filename.c_str());
 
 
             // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
 
             // timeout logic
-            copyFile(&sock, filename);
+            copyFile(&sock, f->d_name);
         }
 
         closedir(SRC);
@@ -157,7 +158,7 @@ bool isDirectory(char *dirname) {
 //  Given a filename, copy it to server
 //     
 // ------------------------------------------------------
-void copyFile(C150DgmSocket **sock, string filename) {
+void copyFile(C150DgmSocket **sock, char filename[]) {
     //
     // Variable declarations
     //
@@ -232,11 +233,11 @@ void copyFile(C150DgmSocket **sock, string filename) {
 //  to the server and write to outgoingPacket
 //     
 // ------------------------------------------------------
-void sendDataPacket(C150DgmSocket **sock, string filename, 
+void sendDataPacket(C150DgmSocket **sock, char filename[], 
                       char outgoingPacket2[MAX_PKT_LEN]) {
     // maybe remove it in final submission?
     assert(sock != NULL && *sock != NULL);
-    // assert(filename != NULL);
+    assert(filename != NULL);
 
     // TODO: is memcpy dangerous? +1 strlen?
     char outgoingPacket[MAX_PKT_LEN];
@@ -246,11 +247,9 @@ void sendDataPacket(C150DgmSocket **sock, string filename,
     dataPacket.numTotalPackets = 1;
     dataPacket.packetNumber = 1;
 
-    // cout << strlen(filename) + 1 << endl;
-    cout << filename.length() << endl;
-    dataPacket.filename = filename;
-    // memcpy(dataPacket.filename, filename, filename.length());
-    // cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
+    cout << strlen(filename) + 1 << endl;
+    memcpy(dataPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
     cout << dataPacket.packetType << " " << dataPacket.filename << endl;
     // TODO: do we still need to consider the +1 if char arr is in struct?
     memcpy(outgoingPacket, &dataPacket, sizeof(dataPacket));
