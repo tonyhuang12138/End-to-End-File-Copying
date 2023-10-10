@@ -36,6 +36,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <bits/stdc++.h>
+#include "sha1.h"
 // #include <string.h>
 
 using namespace std;          // for C++ std library

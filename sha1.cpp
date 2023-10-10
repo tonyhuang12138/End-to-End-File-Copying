@@ -14,7 +14,7 @@
 //     Note: this must be linked with the g++ -lssl directive. 
 //
 
-
+#include "c150nastyfile.h"        // for c150nastyfile & framework
 #include <string>
 #include <cstdlib>
 #include <fstream>
@@ -23,69 +23,31 @@
 #include <openssl/sha.h>
 #include <iostream>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include "nastyfileio.h"
 
 using namespace std;
-void sha1();
-
-int main(int argc, char *argv[])
-{
-	sha1();
-	return 0;
-}
+using namespace C150NETWORK;
 
 
-
-void sha1() {
+void sha1(char *argv[]) {
 	unsigned char obuf[20];
-	unsigned char buffer[10000];
 
-	string filename = "Makefile";
-	FILE* infile = fopen(filename.c_str(), "rb");
+	// string filename = "Makefile";
+	// string filename = "Makefile";
+	string filename = ".hi";
 
-	// TODO: what is the proper way of reading into buffer?
-	// Why is rewind dangerous?
+	cout << "Before write file to buffer\n";
 
-
-	// // traverse infile and return its size
-	// fseek(infile, 0, SEEK_END);
-
-	// // if (ftell(infile) < 0) {
-	// // 	cerr << "Error occurred when traversing file to find file size." << endl;
-	// // 	// delete t;
-	// // 	// delete buffer;
-	// // 	// return;
-	// // } 
-	
-	// size_t fileSize = ftell(infile);
-
-	// cout << "File size is " << fileSize << endl;
-	// // fseek(infile, 0, SEEK_SET);
-	// rewind(infile);
-
-	// read infile into char buffer
-	size_t bytesRead = fread(buffer, 1, 2527, infile);
-	// buffer[2528] = '\0';
-
-	cout << "Bytes read is " << bytesRead << endl;
-
-	// if (bytesRead != fileSize) {
-	// 	cerr << "There is an error reading the supplied infile!!!!!" << endl;
-	// 	// fclose(infile);
-	// 	// delete t;
-	// 	// delete buffer;
-	// 	return;
-	// }
-
-	cerr << "HIIIII!!!!" << endl;
-	fclose(infile);
-
-	// for (size_t i = 0; i < bytesRead; ++i) {
-	// 	printf("%c", buffer[i]);
-	// }
-
+	char *buffer = copyFile(argv[1], filename, 0);
+	if (buffer == NULL) {
+		fprintf(stderr,"Error reading file %s into buffer.\n", filename.c_str());
+    	return;
+	}
 
 	printf ("SHA1 (\"%s\") = ", filename.c_str());
-	SHA1(buffer, sizeof(buffer), obuf);
+	SHA1((const unsigned char *)buffer, sizeof(buffer), obuf);
 
 
 	for (int i = 0; i < 20; i++)
@@ -93,4 +55,5 @@ void sha1() {
 		printf ("%02x", (unsigned int) obuf[i]);
 	}
 	printf ("\n");
+	free(buffer);
 }

@@ -43,8 +43,7 @@ C150AR = $(C150LIB)c150ids.a
 LDFLAGS = 
 INCLUDES = $(C150LIB)c150dgmsocket.h $(C150LIB)c150nastydgmsocket.h $(C150LIB)c150network.h $(C150LIB)c150exceptions.h $(C150LIB)c150debug.h $(C150LIB)c150utility.h
 
-all: nastyfiletest makedatafile sha1test filecopyclient filecopyserver sha1
-
+all: nastyfiletest makedatafile sha1test filecopyclient filecopyserver
 
 #
 # Build filecopyclient 
@@ -55,8 +54,8 @@ filecopyclient: filecopyclient.o  $(C150AR) $(INCLUDES)
 #
 # Build filecopyserver - not finished
 #
-filecopyserver: filecopyserver.o  $(C150AR) $(INCLUDES)
-	$(CPP) -o filecopyserver filecopyserver.o $(C150AR)
+filecopyserver: filecopyserver.o sha1.o nastyfileio.o $(C150AR) $(INCLUDES)
+	$(CPP) -o filecopyserver filecopyserver.o sha1.o nastyfileio.o -lssl -lcrypto $(C150AR)
 
 #
 # Build the nastyfiletest sample
@@ -64,12 +63,9 @@ filecopyserver: filecopyserver.o  $(C150AR) $(INCLUDES)
 nastyfiletest: nastyfiletest.cpp  $(C150AR) $(INCLUDES)
 	$(CPP) -o nastyfiletest  $(CPPFLAGS) nastyfiletest.cpp $(C150AR)
 
-#
-# Build the sha1test
-#
-sha1: sha1.cpp
-	$(CPP) -o sha1 sha1.cpp -lssl -lcrypto
 
+# nastyfileio: nastyfileio.o $(C150AR) $(INCLUDES)
+# 	$(CPP) -o nastyfileio nastyfileio.o $(CPPFLAGS) $(C150AR)
 
 #
 # Build the sha1test

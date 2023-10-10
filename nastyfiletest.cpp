@@ -240,6 +240,7 @@ copyFile(string sourceDir, string fileName, string targetDir, int nastiness) {
   //
   // make sure the file we're copying is not a directory
   // 
+  cout << "Source name: " << sourceName << endl;
   if (!isFile(sourceName)) {
     cerr << "Input file " << sourceName << " is a directory or other non-regular file. Skipping" << endl;
     return;
