@@ -31,13 +31,11 @@ using namespace std;
 using namespace C150NETWORK;
 
 
-void sha1(string filename, string dirName) {
-	unsigned char obuf[20];
-
+void sha1(string filename, string dirName, int nastiness, unsigned char* obuf) {
 	cout << "Before write file to buffer\n";
 
 	int readlen = -1;
-	unsigned char *buffer = copyFile(dirName.c_str(), filename, 0, &readlen);
+	unsigned char *buffer = copyFile(dirName.c_str(), filename, nastiness, &readlen);
 	if (buffer == NULL or readlen == -1) {
 		fprintf(stderr,"Error reading file %s into buffer.\n", filename.c_str());
     	return;

@@ -48,9 +48,14 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 # define MAX_RETRIES 5
 
 bool isDirectory(char *dirname);
-void copyFile(C150DgmSocket **sock, char filename[]);
+int getPacketType(char incomingPacket[]);
+void copyFile(C150DgmSocket **sock, string filename, string dirName,  
+              int filenastiness);
 void sendDataPacket(C150DgmSocket **sock, char filename[], 
-                      char outgoingPacket[MAX_PKT_LEN]);
+                    char outgoingDataPacket[], int outgoingDataPacketSize);
+void receiveChecksumPacket(C150DgmSocket **sock, string filename, 
+                           string dirName, int filenastiness,
+                           char outgoingDataPacket[]);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -69,11 +74,14 @@ int main(int argc, char *argv[]) {
     //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     //
     GRADEME(argc, argv);
+
+    //
+    //  Set up debug message logging
+    //
+    // setUpDebugLogging("filecopyclientdebug.txt",argc, argv);
     
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
-
-    (void) filenastiness;
 
     // Create the socket
     // TODO: maybe setup debugging log?
@@ -111,7 +119,7 @@ int main(int argc, char *argv[]) {
             // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
 
             // timeout logic
-            copyFile(&sock, f->d_name);
+            copyFile(&sock, f->d_name, argv[srcdirArg], filenastiness);
         }
 
         closedir(SRC);
@@ -153,48 +161,131 @@ bool isDirectory(char *dirname) {
 
 // ------------------------------------------------------
 //
+//                   getPacketType
+//
+//  Given an incoming packet, extract and return the 
+//  packet type
+//     
+// ------------------------------------------------------
+int getPacketType(char incomingPacket[]) {
+    int packetType;
+    memcpy(&packetType, incomingPacket, sizeof(int));
+    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
+    
+    return packetType;
+}
+
+// ------------------------------------------------------
+//
 //                   copyFile
 //
 //  Given a filename, copy it to server
 //     
 // ------------------------------------------------------
-void copyFile(C150DgmSocket **sock, char filename[]) {
-    //
-    // Variable declarations
-    //
-    ssize_t readlen;              // amount of data read from socket
-    char incomingPacket[MAX_PKT_LEN];
-    char outgoingPacket[MAX_PKT_LEN]; // TODO: null terminate this?
-    int retry_i = 0;
-    bool timeoutStatus;
+void copyFile(C150DgmSocket **sock, string filename, string dirName,  
+              int filenastiness) {
+    char outgoingDataPacket[DATA_PACKET_LEN]; // TODO: null terminate this?
 
     // Start sending
     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
-    sendDataPacket(sock, filename, outgoingPacket);
-    // all packets sent by this point
+    sendDataPacket(sock, (char *) filename.c_str(), outgoingDataPacket, DATA_PACKET_LEN);
+    printf("Data packet for file %s sent\n", filename.c_str());
 
-    (void) incomingPacket;
-    (void) retry_i;
+    *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
+        
+    receiveChecksumPacket(sock, filename, dirName, filenastiness, 
+                          outgoingDataPacket);
+}
+
+
+// ------------------------------------------------------
+//
+//                   sendDataPacket
+//
+//  Given a filename, send the parts of the data as a packet 
+//  to the server and write to outgoingDataPacket
+//     
+// ------------------------------------------------------
+void sendDataPacket(C150DgmSocket **sock, char filename[], 
+                    char outgoingDataPacket[], int outgoingDataPacketSize) {
+    // maybe remove it in final submission?
+    assert(sock != NULL && *sock != NULL);
+    assert(filename != NULL);
+
+    DataPacket dataPacket;
+
+    // TODO: hardcoding only for the end to end submission, change later
+    dataPacket.numTotalPackets = 1;
+    dataPacket.packetNumber = 1;
+
+    memcpy(dataPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
+    cout << dataPacket.packetType << " " << dataPacket.filename << endl;
+    memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
+
+    // write
+    cout << "write len " <<  outgoingDataPacketSize << endl;
+    (*sock) -> write(outgoingDataPacket, outgoingDataPacketSize);
+}
+
+
+// the later version should resend cycle/file instead of packet. here the packet symbols the entire file
+// ------------------------------------------------------
+//
+//                   receiveChecksumPacket
+//
+//  Expect a checksum packet from server. If received, 
+//  compute a checksum for the file and compares it with
+//  that of the server packet and sends the comparison
+//  result to server.
+//     
+// ------------------------------------------------------
+void receiveChecksumPacket(C150DgmSocket **sock, string filename, 
+                           string dirName, int filenastiness,
+                           char outgoingDataPacket[]) {
+    //
+    // Variable declarations
+    //
+    ssize_t readlen;              // amount of data read from socket
+    char incomingChecksumPacket[CHECKSUM_PACKET_LEN];
+    int retry_i = 0;
+    bool timeoutStatus;
+    int packetType;
+    unsigned char incomingChecksum[HASH_CODE_LENGTH];
+
+    printf("Receiving checksum packet for file %s\n", filename.c_str());
+    assert(incomingChecksumPacket == sizeof(incomingChecksumPacket));
+    readlen = (*sock) -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+    timeoutStatus = (*sock) -> timedout();
+
+    cout << "Timeout status is: " << timeoutStatus << endl;
+
+    // validate size of received packet
+    if (readlen == 0) {
+        c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
+        timeoutStatus = true;
+        retry_i++;
+    }
+
+    // validate packet type
+    packetType = getPacketType(incomingChecksumPacket);
+    if (packetType != CHECKSUM_PACKET_TYPE) { 
+        fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
+        timeoutStatus = true;
+        retry_i++;
+    }
     (void) timeoutStatus;
-    // // Read the response from the server
-    // // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    // // TODO: listen for checksum
-    // readlen = (*sock) -> read(incomingPacket, sizeof(incomingPacket));
-    // timeoutStatus = (*sock) -> timedout();
-
     // // keep resending message up to MAX_RETRIES times when read timedout
-    // retry_i = 0;
     // while (retry_i < MAX_RETRIES && timeoutStatus == true) {
     //     // Send the message to the server
     //     // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
     //     //                 argv[0], outgoingMsg);
-    //     (*sock) -> write(outgoingPacket, sizeof(outgoingPacket));
+    //     (*sock) -> write(outgoingDataPacket, DATA_PACKET_LEN);
 
     //     // Read the response from the server
     //     // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    //     readlen = (*sock) -> read(incomingPacket, 
-    //                             sizeof(incomingPacket));
+    //     readlen = (*sock) -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
     //     timeoutStatus = (*sock) -> timedout();
 
     //     retry_i++;
@@ -205,60 +296,17 @@ void copyFile(C150DgmSocket **sock, char filename[]) {
     //     throw C150NetworkException("Timed out after 5 retries.");
     // }
 
-    // // keep reading until timeout if read is successful
-    // while (timeoutStatus != true) {
-    //     // TODO: calculate checksum and send back confirmation?
-    //     // is confirmation necessary?
-        
-    //     // might receive checksum packets from other files
+    // read checksum packet
+    // TODO: check if the filename matches with current file
+    // send confirmation packet to client side
+    // ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
 
-    //     // Read the response from the server
-    //     // c150debug->printf(C150APPLICATION,"%s: more reads - Returned from write, doing read()", argv[0]);
-    //     readlen = (*sock) -> read(incomingPacket, sizeof(incomingPacket));
-    //     timeoutStatus = (*sock) -> timedout();
-    // }
+    // sha1(filename, dirName, filenastiness, incomingChecksum);
+    (void) incomingChecksum;
 
-    // timeoutStatus = false;
+    // compute local checksum
+    // send comparison result
+    // wait for server response
+
     (void) readlen;
-    
-    *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
-}
-
-
-// ------------------------------------------------------
-//
-//                   sendDataPacket
-//
-//  Given a filename, send the parts of the data as a packet 
-//  to the server and write to outgoingPacket
-//     
-// ------------------------------------------------------
-void sendDataPacket(C150DgmSocket **sock, char filename[], 
-                      char outgoingPacket2[MAX_PKT_LEN]) {
-    // maybe remove it in final submission?
-    assert(sock != NULL && *sock != NULL);
-    assert(filename != NULL);
-
-    // TODO: is memcpy dangerous? +1 strlen?
-    char outgoingPacket[MAX_PKT_LEN];
-    DataPacket dataPacket;
-
-    // TODO: hardcoding only for the end to end submission, change later
-    dataPacket.numTotalPackets = 1;
-    dataPacket.packetNumber = 1;
-
-    cout << strlen(filename) + 1 << endl;
-    memcpy(dataPacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
-    cout << dataPacket.packetType << " " << dataPacket.filename << endl;
-    // TODO: do we still need to consider the +1 if char arr is in struct?
-    memcpy(outgoingPacket, &dataPacket, sizeof(dataPacket));
-
-    // TODO: testing; change name!
-    memcpy(outgoingPacket2, outgoingPacket, sizeof(outgoingPacket));
-
-
-    // write
-    cout << "write len " <<  sizeof(outgoingPacket) << endl;
-    (*sock) -> write(outgoingPacket, sizeof(outgoingPacket));
 }
