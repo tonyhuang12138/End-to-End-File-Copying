@@ -42,9 +42,11 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock);
 int getPacketType(char incomingPacket[]);
-string computeSha1code (char filename[], int nastiness);
+void receiveDataPackets(C150DgmSocket **sock, string dirName, 
+                        int filenastiness);
+void sendChecksumPacket(C150DgmSocket **sock, string filename, string dirName, 
+                        int filenastiness);
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
 const int filenastinessArg = 2;           // filenastiness is 2nd arg
@@ -54,6 +56,12 @@ const int targetdirArg = 3;               // targetdir is 3rd arg
 
   
 int main(int argc, char *argv[])  {
+    // validate input format
+    if (argc != 4) {
+        fprintf(stderr,"Correct syntax is: %s <networknastiness> <filenastiness> <targetdir>\n", argv[0]);
+        exit(1);
+    }
+
     //
     //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     //
@@ -63,26 +71,19 @@ int main(int argc, char *argv[])  {
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
 
-    // create file stream and socket
-    NASTYFILE output(filenastiness);
+    // create socket with given nastiness
     C150DgmSocket *sock = new C150NastyDgmSocket(networknastiness);
 
-    // validate input format
-    if (argc != 4) {
-        fprintf(stderr,"Correct syntax is: %s <networknastiness> <filenastiness> <targetdir>\n", argv[0]);
-        exit(1);
-    }
-
     try {
-        // open target dir
+        // check if target dir exists
         DIR *SRC = opendir(argv[targetdirArg]);
         if (SRC == NULL) {
             fprintf(stderr,"Error opening target directory %s\n", argv[targetdirArg]);     
             exit(8);
         } 
-
-        receiveDataPackets(&output, &sock);
         closedir(SRC);
+
+        receiveDataPackets(&sock, argv[targetdirArg], filenastiness);
     // TODO: can the exception thrown within receiveDataPackets be caught?
     } catch (C150NetworkException& e) { 
         // Write to debug log
@@ -103,7 +104,8 @@ int main(int argc, char *argv[])  {
 //  packet type
 //     
 // ------------------------------------------------------
-void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
+void receiveDataPackets(C150DgmSocket **sock, string dirName,  
+                        int filenastiness) {
     // TODO: don't think this is while 1; need to investigate
     char incomingPacket[MAX_PKT_LEN];   // received message data
     string filename = "";
@@ -157,7 +159,7 @@ void receiveDataPackets(NASTYFILE *output, C150DgmSocket **sock) {
                     (size_t) dataPacket->numTotalPackets) {
             *GRADING << "File: " << filename << " received, beginning end-to-end check" << endl;
 
-            // sendChecksumPacket();
+            sendChecksumPacket(sock, filename, dirName, filenastiness);
 
             // reset transmission stats for next file
             filename = "";
@@ -194,17 +196,20 @@ int getPacketType(char incomingPacket[]) {
 //  calculate and send checksum as a packet to client
 //     
 // ------------------------------------------------------
-void sendChecksumPacket() {
+void sendChecksumPacket(C150DgmSocket **sock, string filename, string dirName,  
+                        int filenastiness) {
     // File: <name> end-to-end check succeeded
     // File: <name> end-to-end check failed
-
+    printf("In sendChecksumPacket with filename %s, directory name %s and file nastiness %d\n", filename.c_str(), dirName.c_str(), filenastiness);
     ChecksumPacket checksumPacket;
     // TODO:
     // 1. Calculate checksum
     // 2. File nastiness: calculate several times
     // 3. Network nastiness: retry
 
-    
+    // unsigned char checksum[20];
+    // sha1(filename, dirName, checksum);
+    sha1(filename, dirName);
 
 
     // while (1) { // Question: can we modularize read packet later?
@@ -231,19 +236,4 @@ void sendChecksumPacket() {
 
     //     // TODO: wait (loop here) for the client response 
     // }
-}
-
-// ------------------------------------------------------
-//
-//                   computeSha1code
-//
-//  Given a filename, compute the Sha1code of that file
-//     
-// ------------------------------------------------------
-// TODO: filename will be changed to string later
-
-string computeSha1code (char filename[], int nastiness) {
-    NASTYFILE stream(nastiness);
-
-    return "";
 }

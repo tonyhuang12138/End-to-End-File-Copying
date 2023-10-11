@@ -31,24 +31,21 @@ using namespace std;
 using namespace C150NETWORK;
 
 
-void sha1(char *argv[]) {
+void sha1(string filename, string dirName) {
 	unsigned char obuf[20];
-
-	// string filename = "Makefile";
-	// string filename = "Makefile";
-	string filename = ".hi";
 
 	cout << "Before write file to buffer\n";
 
-	char *buffer = copyFile(argv[1], filename, 0);
-	if (buffer == NULL) {
+	int readlen = -1;
+	unsigned char *buffer = copyFile(dirName.c_str(), filename, 0, &readlen);
+	if (buffer == NULL or readlen == -1) {
 		fprintf(stderr,"Error reading file %s into buffer.\n", filename.c_str());
     	return;
 	}
 
+	printf("Buffer size is %d", readlen);
 	printf ("SHA1 (\"%s\") = ", filename.c_str());
-	SHA1((const unsigned char *)buffer, sizeof(buffer), obuf);
-
+	SHA1(buffer, readlen, obuf);
 
 	for (int i = 0; i < 20; i++)
 	{

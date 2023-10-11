@@ -70,11 +70,10 @@ int main(int argc, char *argv[]) {
     //
     GRADEME(argc, argv);
     
-    // create file pointer with given nastiness
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
-    
-    NASTYFILE inputFile(filenastiness);
+
+    (void) filenastiness;
 
     // Create the socket
     // TODO: maybe setup debugging log?
@@ -84,13 +83,14 @@ int main(int argc, char *argv[]) {
     sock -> turnOnTimeouts(3000);
 
     try {
-        // loop through all filenames in src dir
+        // check if target dir exists
         DIR *SRC = opendir(argv[srcdirArg]);
         if (SRC == NULL) {
             fprintf(stderr,"Error opening source directory %s\n", argv[srcdirArg]);     
             exit(8);
         }
 
+        // loop through all filenames in src dir
         while (dirent *f = readdir(SRC)) {
             char path[500];
 

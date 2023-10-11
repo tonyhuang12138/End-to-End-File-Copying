@@ -31,10 +31,6 @@ using namespace std;
 using namespace C150NETWORK;
 
 
-bool isFile(string fname);
-char *copyFile(string sourceDir, string fileName, int nastiness);
-string makeFileName(string dir, string name);
-
 // ------------------------------------------------------
 //
 //                   isFile
@@ -89,7 +85,8 @@ string makeFileName(string dir, string name) {
 //
 // ------------------------------------------------------
 
-char *copyFile(string sourceDir, string fileName, int nastiness) {
+unsigned char *copyFile(string sourceDir, string fileName, int nastiness, 
+                        int *filesize) {
   cout << "In copyFile\n";
   //
   //  Misc variables, mostly for return codes
@@ -97,7 +94,7 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
   void *fopenretval;
   size_t len;
   string errorString;
-  char *buffer;
+  unsigned char *buffer;
   struct stat statbuf;  
   size_t sourceSize;
 
@@ -105,7 +102,6 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
   // Put together directory and filenames SRC/file TARGET/file
   //
   string sourceName = makeFileName(sourceDir, fileName);
-//   string targetName = makeFileName(targetDir, fileName);
 
   //
   // make sure the file we're copying is not a directory
@@ -116,27 +112,22 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
     return NULL;
   }
 
-  // - - - - - - - - - - - - - - - - - - - - -
-  // LOOK HERE! This demonstrates the 
-  // COMP 150 Nasty File interface
-  // - - - - - - - - - - - - - - - - - - - - -
-
-//   try {
+  //   try {
 
     //
     // Read whole input file 
     //
     if (lstat(sourceName.c_str(), &statbuf) != 0) {
       fprintf(stderr,"copyFile: Error stating supplied source file %s\n", sourceName.c_str());
-     exit(20);
+      exit(20);
     }
-  
+
     //
     // Make an input buffer large enough for
     // the whole file
     //
     sourceSize = statbuf.st_size;
-    buffer = (char *)malloc(sourceSize);
+    buffer = (unsigned char *)malloc(sourceSize);
 
     //
     // Define the wrapped file descriptors
@@ -151,22 +142,22 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
     //
     NASTYFILE inputFile(nastiness);      // See c150nastyfile.h for interface
     // NASTYFILE outputFile(nastiness);     // NASTYFILE is supposed to
-                                         // remind you of FILE
-                                         //  It's defined as: 
-                                         // typedef C150NastyFile NASTYFILE
-  
+                                          // remind you of FILE
+                                          //  It's defined as: 
+                                          // typedef C150NastyFile NASTYFILE
+
     // do an fopen on the input file
     fopenretval = inputFile.fopen(sourceName.c_str(), "rb");  
-                                         // wraps Unix fopen
-                                         // Note rb gives "read, binary"
-                                         // which avoids line end munging
-  
+                                          // wraps Unix fopen
+                                          // Note rb gives "read, binary"
+                                          // which avoids line end munging
+
     if (fopenretval == NULL) {
       cerr << "Error opening input file " << sourceName << 
-	      " errno=" << strerror(errno) << endl;
+        " errno=" << strerror(errno) << endl;
       exit(12);
     }
-  
+
 
     // 
     // Read the whole file
@@ -174,21 +165,15 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
     len = inputFile.fread(buffer, 1, sourceSize);
     if (len != sourceSize) {
       cerr << "Error reading file " << sourceName << 
-	      "  errno=" << strerror(errno) << endl;
+        "  errno=" << strerror(errno) << endl;
       exit(16);
     }
-  
+
     if (inputFile.fclose() != 0 ) {
       cerr << "Error closing input file " << sourceName << 
-	      " errno=" << strerror(errno) << endl;
+        " errno=" << strerror(errno) << endl;
       exit(16);
     }
-
-    //
-    // Free the input buffer to avoid memory leaks
-    //
-    // free(buffer);
-
 
     //
     // Handle any errors thrown by the file framekwork
@@ -198,6 +183,7 @@ char *copyFile(string sourceDir, string fileName, int nastiness) {
 // 	       e.formattedExplanation() << endl;
     
 //   }
+    *filesize = len;
 
     return buffer;
 }
