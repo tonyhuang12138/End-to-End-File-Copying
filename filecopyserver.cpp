@@ -47,7 +47,7 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 int getPacketType(char incomingPacket[]);
 void receiveDataPackets(C150DgmSocket *sock, string dirName, 
                         int filenastiness);
-void sendChecksum(C150DgmSocket *sock, string filename, string dirName,  
+void checksumPhase(C150DgmSocket *sock, string filename, string dirName,  
                   int filenastiness);
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness, char outgoingChecksumPacket[], 
@@ -167,7 +167,7 @@ void receiveDataPackets(C150DgmSocket *sock, string dirName,
                     (size_t) dataPacket->numTotalPackets) {
             *GRADING << "File: " << filename << " received, beginning end-to-end check" << endl;
 
-            sendChecksum(sock, filename, dirName, filenastiness);
+            checksumPhase(sock, filename, dirName, filenastiness);
 
             // reset transmission stats for next file
             filename = "";
@@ -196,13 +196,13 @@ int getPacketType(char incomingPacket[]) {
 
 // ------------------------------------------------------
 //
-//                   sendChecksum
+//                   checksum
 //
 //  Assuming that file has been received in whole, send
 //  calculate and send checksum as a packet to client
 //     
 // ------------------------------------------------------
-void sendChecksum(C150DgmSocket *sock, string filename, string dirName,  
+void checksumPhase(C150DgmSocket *sock, string filename, string dirName,  
                   int filenastiness) {
     assert(sock != NULL);
 

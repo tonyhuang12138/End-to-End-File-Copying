@@ -56,7 +56,7 @@ void sendDataPacket(C150DgmSocket *sock, char filename[],
 void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
                            string dirName, int filenastiness,
                            char outgoingDataPacket[]);
-void sendConfirmation(C150DgmSocket *sock, string filename, string dirName,  
+void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
                         int filenastiness, char incomingChecksumPacket[], 
                         int incomingChecksumPacketSize);
 void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
@@ -300,10 +300,10 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
     // write flush logic
 
 
-    sendConfirmation(sock, filename, dirName, filenastiness, incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+    confirmationPhase(sock, filename, dirName, filenastiness, incomingChecksumPacket, CHECKSUM_PACKET_LEN);
 }
 
-void sendConfirmation(C150DgmSocket *sock, string filename, string dirName,  
+void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
                         int filenastiness, char incomingChecksumPacket[], 
                         int incomingChecksumPacketSize) {
     assert(sock != NULL);
@@ -329,13 +329,16 @@ void sendConfirmation(C150DgmSocket *sock, string filename, string dirName,
 
 bool compareHash(string filename, string dirName, 
                  int filenastiness, char incomingChecksumPacket[]) {
+    cout << "In compare hash\n";
     bool comparisonResult;
     
     unsigned char localChecksum[HASH_CODE_LENGTH];
     ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
 
     // TODO: check if the filename matches with current file
-    if (memcmp((char *) filename.c_str(), checksumPacket->filename, FILENAME_LEN) != 0){
+    if (strcmp((char *) filename.c_str(), checksumPacket->filename) != 0){
+        cout << memcmp((char *) filename.c_str(), checksumPacket->filename, FILENAME_LEN);
+        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename.c_str(), checksumPacket->filename);
         return 2; // ??
     }
         
@@ -344,11 +347,14 @@ bool compareHash(string filename, string dirName,
     sha1(filename, dirName, filenastiness,  localChecksum);
 
     // compare checksums
+    cout << "Comparing hash\n";
     if (memcmp(localChecksum, checksumPacket->checksum, HASH_CODE_LENGTH) == 0) {
         comparisonResult = true;
+        printf("End to end succeeded for file %s", filename.c_str());
         *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 1 << endl;
     } else {
         comparisonResult = false;
+        printf("End to end failed for file %s", filename.c_str());
         *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 1 << endl;
     }
 
@@ -377,5 +383,3 @@ void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
     cout << "write len " <<  outgoingConfirmationPacket << endl;
     sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
 }
-
-
