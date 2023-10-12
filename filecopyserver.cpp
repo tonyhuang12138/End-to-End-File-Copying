@@ -224,6 +224,9 @@ void sendChecksum(C150DgmSocket *sock, string filename, string dirName,
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness, char outgoingChecksumPacket[], 
                         int outgoingChecksumPacketSize) {
+    assert(sock != NULL);
+    assert(filename != NULL);
+    
     printf("In sendChecksumPacket with filename %s, directory name %s and file nastiness %d\n", filename, dirName.c_str(), filenastiness);
     ChecksumPacket checksumPacket;
     unsigned char checksum[HASH_CODE_LENGTH];
@@ -262,6 +265,8 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
 
 void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
                                char outgoingChecksumPacket[]) {
+    assert(sock != NULL);
+
     ssize_t readlen;              // amount of data read from socket
     char incomingConfirmationPacket[DATA_PACKET_LEN];
     int retry_i = 0;
@@ -278,6 +283,28 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
         retry_i++;
     }
 
+    // keep resending message up to MAX_RETRIES times when read timedout
+    while (retry_i < MAX_RETRIES && timeoutStatus == true) {
+        // Send the message to the server
+        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
+        //                 argv[0], outgoingMsg);
+        sock -> write(outgoingChecksumPacket, CONFIRMATION_PACKET_LEN);
+        printf("Sent checksum packet for file %s, retry %d\n", filename.c_str(), retry_i);
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+        readlen = sock -> read(incomingConfirmationPacket, 
+                                sizeof(incomingConfirmationPacket));
+        timeoutStatus = sock -> timedout();
+
+        retry_i++;
+    }
+
+    // throw exception if all retries exceeded
+    if (retry_i == MAX_RETRIES) {
+        throw C150NetworkException("Timed out after 5 retries.");
+    }
+
     // validate packet type
     packetType = getPacketType(incomingConfirmationPacket);
     if (packetType != CHECKSUMCMP_PACKET_TYPE) { 
@@ -285,28 +312,6 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
         timeoutStatus = true;
         retry_i++;
     }
-    (void) timeoutStatus;
-    // // keep resending message up to MAX_RETRIES times when read timedout
-    // while (retry_i < MAX_RETRIES && timeoutStatus == true) {
-    //     // Send the message to the server
-    //     // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
-    //     //                 argv[0], outgoingMsg);
-    //     sock -> write(outgoingChecksumPacket, CONFIRMATION_PACKET_LEN);
-    //     printf("Sent checksum packet for file %s, retry %d\n", filename.c_str(), retry_i);
-
-    //     // Read the response from the server
-    //     // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    //     readlen = sock -> read(incomingConfirmationPacket, 
-    //                             sizeof(incomingConfirmationPacket));
-    //     timeoutStatus = sock -> timedout();
-
-    //     retry_i++;
-    // }
-
-    // // throw exception if all retries exceeded
-    // if (retry_i == MAX_RETRIES) {
-    //     throw C150NetworkException("Timed out after 5 retries.");
-    // }
 
 
 

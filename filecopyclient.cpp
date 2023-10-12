@@ -269,6 +269,26 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
         retry_i++;
     }
 
+    // keep resending message up to MAX_RETRIES times when read timedout
+    while (retry_i < MAX_RETRIES && timeoutStatus == true) {
+        // Send the message to the server
+        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
+        //                 argv[0], outgoingMsg);
+        sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+        readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+        timeoutStatus = sock -> timedout();
+
+        retry_i++;
+    }
+
+    // throw exception if all retries exceeded
+    if (retry_i == MAX_RETRIES) {
+        throw C150NetworkException("Timed out after 5 retries.");
+    }
+
     // validate packet type
     packetType = getPacketType(incomingChecksumPacket);
     if (packetType != CHECKSUM_PACKET_TYPE) { 
@@ -276,26 +296,6 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
         timeoutStatus = true;
         retry_i++;
     }
-    (void) timeoutStatus;
-    // // keep resending message up to MAX_RETRIES times when read timedout
-    // while (retry_i < MAX_RETRIES && timeoutStatus == true) {
-    //     // Send the message to the server
-    //     // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
-    //     //                 argv[0], outgoingMsg);
-    //     sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
-
-    //     // Read the response from the server
-    //     // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    //     readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-    //     timeoutStatus = sock -> timedout();
-
-    //     retry_i++;
-    // }
-
-    // // throw exception if all retries exceeded
-    // if (retry_i == MAX_RETRIES) {
-    //     throw C150NetworkException("Timed out after 5 retries.");
-    // }
 
     // read checksum packet
     // TODO: check if the filename matches with current file
