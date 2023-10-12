@@ -204,7 +204,9 @@ int getPacketType(char incomingPacket[]) {
 // ------------------------------------------------------
 void sendChecksum(C150DgmSocket *sock, string filename, string dirName,  
                   int filenastiness) {
-    char outgoingChecksumPacket[CHECKSUM_PACKET_LEN]; // TODO: null terminate this?
+    assert(sock != NULL);
+
+    char outgoingChecksumPacket[CHECKSUM_PACKET_LEN];
     
     sendChecksumPacket(sock, (char *) filename.c_str(), dirName, filenastiness, 
                        outgoingChecksumPacket, CHECKSUM_PACKET_LEN);
@@ -308,14 +310,13 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
 
     // validate packet type
     packetType = getPacketType(incomingConfirmationPacket);
-    if (packetType != CHECKSUMCMP_PACKET_TYPE) { 
+    if (packetType != CONFIRMATION_PACKET_TYPE) { 
         fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
         timeoutStatus = true;
     }
 
-
+    // HERE!
 
     // File: <name> end-to-end check succeeded
     // File: <name> end-to-end check failed
-    (void) readlen;
 }

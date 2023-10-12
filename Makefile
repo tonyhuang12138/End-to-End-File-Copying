@@ -48,8 +48,8 @@ all: nastyfiletest makedatafile sha1test filecopyclient filecopyserver sha1teste
 #
 # Build filecopyclient 
 #
-filecopyclient: filecopyclient.o  $(C150AR) $(INCLUDES)
-	$(CPP) -o filecopyclient filecopyclient.o $(C150AR)
+filecopyclient: filecopyclient.o sha1.o nastyfileio.o $(C150AR) $(INCLUDES)
+	$(CPP) -o filecopyclient filecopyclient.o sha1.o nastyfileio.o -lssl -lcrypto $(C150AR)
 
 #
 # Build filecopyserver - not finished

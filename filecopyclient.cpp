@@ -56,6 +56,16 @@ void sendDataPacket(C150DgmSocket *sock, char filename[],
 void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
                            string dirName, int filenastiness,
                            char outgoingDataPacket[]);
+void sendConfirmation(C150DgmSocket *sock, string filename, string dirName,  
+                        int filenastiness, char incomingChecksumPacket[], 
+                        int incomingChecksumPacketSize);
+void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
+                            string dirName, int filenastiness, 
+                            bool comparisonResult,
+                            char outgoingConfirmationPacket[], 
+                            int outgoingConfirmationPacketSize);
+bool compareHash(string filename, string dirName, 
+                 int filenastiness, char incomingChecksumPacket[]);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -252,8 +262,6 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
     char incomingChecksumPacket[CHECKSUM_PACKET_LEN];
     int retry_i = 0;
     bool timeoutStatus;
-    int packetType;
-    unsigned char incomingChecksum[HASH_CODE_LENGTH];
 
     printf("Receiving checksum packet for file %s\n", filename.c_str());
     assert(CHECKSUM_PACKET_LEN == sizeof(incomingChecksumPacket));
@@ -291,24 +299,83 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
 
     // write flush logic
 
+
+    sendConfirmation(sock, filename, dirName, filenastiness, incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+}
+
+void sendConfirmation(C150DgmSocket *sock, string filename, string dirName,  
+                        int filenastiness, char incomingChecksumPacket[], 
+                        int incomingChecksumPacketSize) {
+    assert(sock != NULL);
+    
+    int packetType;
+    char outgoingConfirmationPacket[CONFIRMATION_PACKET_LEN];
+    bool comparisonResult;
+
     // validate packet type
     packetType = getPacketType(incomingChecksumPacket);
     if (packetType != CHECKSUM_PACKET_TYPE) { 
         fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
-        timeoutStatus = true;
+        return; // retry ???
+    }
+    
+    comparisonResult = compareHash(filename, dirName, filenastiness, incomingChecksumPacket);
+    sendConfirmationPacket(sock, (char *) filename.c_str(), dirName, filenastiness, comparisonResult, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
+    printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), 0);
+
+    // receiveFinishPacket(sock, filename, outgoingConfirmationPacket);
+}
+
+
+bool compareHash(string filename, string dirName, 
+                 int filenastiness, char incomingChecksumPacket[]) {
+    bool comparisonResult;
+    
+    unsigned char localChecksum[HASH_CODE_LENGTH];
+    ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
+
+    // TODO: check if the filename matches with current file
+    if (memcmp((char *) filename.c_str(), checksumPacket->filename, FILENAME_LEN) != 0){
+        return 2; // ??
+    }
+        
+    // compute local checksum
+    // TODO: sample over several times
+    sha1(filename, dirName, filenastiness,  localChecksum);
+
+    // compare checksums
+    if (memcmp(localChecksum, checksumPacket->checksum, HASH_CODE_LENGTH) == 0) {
+        comparisonResult = true;
+        *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 1 << endl;
+    } else {
+        comparisonResult = false;
+        *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 1 << endl;
     }
 
-    // read checksum packet
-    // TODO: check if the filename matches with current file
-    // send confirmation packet to client side
-    // ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
+    return comparisonResult;
+}
 
-    // sha1(filename, dirName, filenastiness, incomingChecksum);
-    (void) incomingChecksum;
 
-    // compute local checksum
+void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
+                            string dirName, int filenastiness, 
+                            bool comparisonResult,
+                            char outgoingConfirmationPacket[], 
+                            int outgoingConfirmationPacketSize) {
+    assert(sock != NULL);
+    assert(filename != NULL);
+
     // send comparison result
     // wait for server response
+    ConfirmationPacket confirmationPacket;
 
-    (void) readlen;
+    memcpy(confirmationPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, confirmationPacket.filename) << endl;
+    cout << confirmationPacket.packetType << " " << confirmationPacket.filename << endl;
+    memcpy(outgoingConfirmationPacket, &confirmationPacket, sizeof(confirmationPacket));
+
+    // write
+    cout << "write len " <<  outgoingConfirmationPacket << endl;
+    sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
 }
+
+
