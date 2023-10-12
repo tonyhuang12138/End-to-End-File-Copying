@@ -206,8 +206,8 @@ void sendChecksum(C150DgmSocket *sock, string filename, string dirName,
                   int filenastiness) {
     char outgoingChecksumPacket[CHECKSUM_PACKET_LEN]; // TODO: null terminate this?
     
-    // sendChecksumPacket(sock, (char *) filename.c_str(), dirName, filenastiness, 
-    //                    outgoingChecksumPacket, CHECKSUM_PACKET_LEN);
+    sendChecksumPacket(sock, (char *) filename.c_str(), dirName, filenastiness, 
+                       outgoingChecksumPacket, CHECKSUM_PACKET_LEN);
     printf("Sent checksum packet for file %s, retry %d\n", filename.c_str(), 0);
 
     receiveConfirmationPacket(sock, filename, outgoingChecksumPacket);
@@ -280,11 +280,12 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
     if (readlen == 0) {
         c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
         timeoutStatus = true;
-        retry_i++;
     }
 
     // keep resending message up to MAX_RETRIES times when read timedout
-    while (retry_i < MAX_RETRIES && timeoutStatus == true) {
+    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
+        retry_i++;
+
         // Send the message to the server
         // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
         //                 argv[0], outgoingMsg);
@@ -296,8 +297,6 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
         readlen = sock -> read(incomingConfirmationPacket, 
                                 sizeof(incomingConfirmationPacket));
         timeoutStatus = sock -> timedout();
-
-        retry_i++;
     }
 
     // throw exception if all retries exceeded
@@ -305,12 +304,13 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
         throw C150NetworkException("Timed out after 5 retries.");
     }
 
+    // write flush logic
+
     // validate packet type
     packetType = getPacketType(incomingConfirmationPacket);
     if (packetType != CHECKSUMCMP_PACKET_TYPE) { 
         fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
         timeoutStatus = true;
-        retry_i++;
     }
 
 

@@ -190,7 +190,7 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     sendDataPacket(sock, (char *) filename.c_str(), outgoingDataPacket, DATA_PACKET_LEN);
-    printf("Data packet for file %s sent\n", filename.c_str());
+    printf("Sent data packet for file %s, retry %d\n", filename.c_str(), 0);
 
     *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
         
@@ -266,22 +266,22 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
     if (readlen == 0) {
         c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
         timeoutStatus = true;
-        retry_i++;
     }
 
     // keep resending message up to MAX_RETRIES times when read timedout
-    while (retry_i < MAX_RETRIES && timeoutStatus == true) {
+    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
+        retry_i++;
+
         // Send the message to the server
         // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
         //                 argv[0], outgoingMsg);
         sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
+        printf("Sent data packet for file %s, retry %d\n", filename.c_str(), retry_i);
 
         // Read the response from the server
         // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
         readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
         timeoutStatus = sock -> timedout();
-
-        retry_i++;
     }
 
     // throw exception if all retries exceeded
@@ -289,12 +289,13 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
         throw C150NetworkException("Timed out after 5 retries.");
     }
 
+    // write flush logic
+
     // validate packet type
     packetType = getPacketType(incomingChecksumPacket);
     if (packetType != CHECKSUM_PACKET_TYPE) { 
         fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
         timeoutStatus = true;
-        retry_i++;
     }
 
     // read checksum packet
