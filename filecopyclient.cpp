@@ -49,11 +49,11 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 bool isDirectory(char *dirname);
 int getPacketType(char incomingPacket[]);
-void copyFile(C150DgmSocket **sock, string filename, string dirName,  
+void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
-void sendDataPacket(C150DgmSocket **sock, char filename[], 
+void sendDataPacket(C150DgmSocket *sock, char filename[], 
                     char outgoingDataPacket[], int outgoingDataPacketSize);
-void receiveChecksumPacket(C150DgmSocket **sock, string filename, 
+void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
                            string dirName, int filenastiness,
                            char outgoingDataPacket[]);
 
@@ -119,7 +119,7 @@ int main(int argc, char *argv[]) {
             // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
 
             // timeout logic
-            copyFile(&sock, f->d_name, argv[srcdirArg], filenastiness);
+            copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
         }
 
         closedir(SRC);
@@ -182,7 +182,7 @@ int getPacketType(char incomingPacket[]) {
 //  Given a filename, copy it to server
 //     
 // ------------------------------------------------------
-void copyFile(C150DgmSocket **sock, string filename, string dirName,  
+void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness) {
     char outgoingDataPacket[DATA_PACKET_LEN]; // TODO: null terminate this?
 
@@ -207,10 +207,10 @@ void copyFile(C150DgmSocket **sock, string filename, string dirName,
 //  to the server and write to outgoingDataPacket
 //     
 // ------------------------------------------------------
-void sendDataPacket(C150DgmSocket **sock, char filename[], 
+void sendDataPacket(C150DgmSocket *sock, char filename[], 
                     char outgoingDataPacket[], int outgoingDataPacketSize) {
     // maybe remove it in final submission?
-    assert(sock != NULL && *sock != NULL);
+    assert(sock != NULL);
     assert(filename != NULL);
 
     DataPacket dataPacket;
@@ -226,7 +226,7 @@ void sendDataPacket(C150DgmSocket **sock, char filename[],
 
     // write
     cout << "write len " <<  outgoingDataPacketSize << endl;
-    (*sock) -> write(outgoingDataPacket, outgoingDataPacketSize);
+    sock -> write(outgoingDataPacket, outgoingDataPacketSize);
 }
 
 
@@ -241,9 +241,10 @@ void sendDataPacket(C150DgmSocket **sock, char filename[],
 //  result to server.
 //     
 // ------------------------------------------------------
-void receiveChecksumPacket(C150DgmSocket **sock, string filename, 
+void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
                            string dirName, int filenastiness,
                            char outgoingDataPacket[]) {
+    assert(sock != NULL);
     //
     // Variable declarations
     //
@@ -255,9 +256,9 @@ void receiveChecksumPacket(C150DgmSocket **sock, string filename,
     unsigned char incomingChecksum[HASH_CODE_LENGTH];
 
     printf("Receiving checksum packet for file %s\n", filename.c_str());
-    assert(incomingChecksumPacket == sizeof(incomingChecksumPacket));
-    readlen = (*sock) -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-    timeoutStatus = (*sock) -> timedout();
+    assert(CHECKSUM_PACKET_LEN == sizeof(incomingChecksumPacket));
+    readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+    timeoutStatus = sock -> timedout();
 
     cout << "Timeout status is: " << timeoutStatus << endl;
 
@@ -281,12 +282,12 @@ void receiveChecksumPacket(C150DgmSocket **sock, string filename,
     //     // Send the message to the server
     //     // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
     //     //                 argv[0], outgoingMsg);
-    //     (*sock) -> write(outgoingDataPacket, DATA_PACKET_LEN);
+    //     sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
 
     //     // Read the response from the server
     //     // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    //     readlen = (*sock) -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-    //     timeoutStatus = (*sock) -> timedout();
+    //     readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
+    //     timeoutStatus = sock -> timedout();
 
     //     retry_i++;
     // }

@@ -45,14 +45,14 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 # define MAX_RETRIES 5
 
 int getPacketType(char incomingPacket[]);
-void receiveDataPackets(C150DgmSocket **sock, string dirName, 
+void receiveDataPackets(C150DgmSocket *sock, string dirName, 
                         int filenastiness);
-void sendChecksum(C150DgmSocket **sock, string filename, string dirName,  
+void sendChecksum(C150DgmSocket *sock, string filename, string dirName,  
                   int filenastiness);
-void sendChecksumPacket(C150DgmSocket **sock, char filename[], string dirName,  
+void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness, char outgoingChecksumPacket[], 
                         int outgoingChecksumPacketSize);
-void receiveConfirmationPacket(C150DgmSocket **sock, string filename, 
+void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
                                char outgoingChecksumPacket[]);
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
@@ -92,7 +92,7 @@ int main(int argc, char *argv[])  {
         } 
         closedir(SRC);
 
-        receiveDataPackets(&sock, argv[targetdirArg], filenastiness);
+        receiveDataPackets(sock, argv[targetdirArg], filenastiness);
     // TODO: can the exception thrown within receiveDataPackets be caught?
     } catch (C150NetworkException& e) { 
         // Write to debug log
@@ -113,7 +113,7 @@ int main(int argc, char *argv[])  {
 //  packet type
 //     
 // ------------------------------------------------------
-void receiveDataPackets(C150DgmSocket **sock, string dirName,  
+void receiveDataPackets(C150DgmSocket *sock, string dirName,  
                         int filenastiness) {
     // TODO: don't think this is while 1; need to investigate
     char incomingDataPacket[DATA_PACKET_LEN];   // received message data
@@ -129,7 +129,7 @@ void receiveDataPackets(C150DgmSocket **sock, string dirName,
         // Read a packet
         // -1 in size below is to leave room for null
         //
-        readlen = (*sock) -> read(incomingDataPacket, sizeof(incomingDataPacket));
+        readlen = sock -> read(incomingDataPacket, sizeof(incomingDataPacket));
         // ignore empty packets
         if (readlen == 0) {
             c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
@@ -202,7 +202,7 @@ int getPacketType(char incomingPacket[]) {
 //  calculate and send checksum as a packet to client
 //     
 // ------------------------------------------------------
-void sendChecksum(C150DgmSocket **sock, string filename, string dirName,  
+void sendChecksum(C150DgmSocket *sock, string filename, string dirName,  
                   int filenastiness) {
     char outgoingChecksumPacket[CHECKSUM_PACKET_LEN]; // TODO: null terminate this?
     
@@ -221,7 +221,7 @@ void sendChecksum(C150DgmSocket **sock, string filename, string dirName,
 //  calculate and send checksum as a packet to client
 //     
 // ------------------------------------------------------
-void sendChecksumPacket(C150DgmSocket **sock, char filename[], string dirName,  
+void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness, char outgoingChecksumPacket[], 
                         int outgoingChecksumPacketSize) {
     printf("In sendChecksumPacket with filename %s, directory name %s and file nastiness %d\n", filename, dirName.c_str(), filenastiness);
@@ -256,11 +256,11 @@ void sendChecksumPacket(C150DgmSocket **sock, char filename[], string dirName,
     assert(memcmp(checksumPacket.checksum, checksum, HASH_CODE_LENGTH) == 0);
 
     memcpy(outgoingChecksumPacket, &checksumPacket, sizeof(checksumPacket));
-    (*sock)->write(outgoingChecksumPacket, outgoingChecksumPacketSize);
+    sock->write(outgoingChecksumPacket, outgoingChecksumPacketSize);
 }
 
 
-void receiveConfirmationPacket(C150DgmSocket **sock, string filename, 
+void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
                                char outgoingChecksumPacket[]) {
     ssize_t readlen;              // amount of data read from socket
     char incomingConfirmationPacket[DATA_PACKET_LEN];
@@ -268,8 +268,8 @@ void receiveConfirmationPacket(C150DgmSocket **sock, string filename,
     bool timeoutStatus;
     int packetType;
 
-    readlen = (*sock) -> read(incomingConfirmationPacket, sizeof(incomingConfirmationPacket));
-    timeoutStatus = (*sock) -> timedout();
+    readlen = sock -> read(incomingConfirmationPacket, sizeof(incomingConfirmationPacket));
+    timeoutStatus = sock -> timedout();
 
     // validate size of received packet
     if (readlen == 0) {
@@ -291,14 +291,14 @@ void receiveConfirmationPacket(C150DgmSocket **sock, string filename,
     //     // Send the message to the server
     //     // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
     //     //                 argv[0], outgoingMsg);
-    //     (*sock) -> write(outgoingChecksumPacket, CONFIRMATION_PACKET_LEN);
+    //     sock -> write(outgoingChecksumPacket, CONFIRMATION_PACKET_LEN);
     //     printf("Sent checksum packet for file %s, retry %d\n", filename.c_str(), retry_i);
 
     //     // Read the response from the server
     //     // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-    //     readlen = (*sock) -> read(incomingConfirmationPacket, 
+    //     readlen = sock -> read(incomingConfirmationPacket, 
     //                             sizeof(incomingConfirmationPacket));
-    //     timeoutStatus = (*sock) -> timedout();
+    //     timeoutStatus = sock -> timedout();
 
     //     retry_i++;
     // }
