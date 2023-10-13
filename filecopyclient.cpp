@@ -40,6 +40,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include "sha1.h"
+#include "nastyfileio.h"
 // #include <string.h>
 
 using namespace std;          // for C++ std library
@@ -47,8 +49,6 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 # define MAX_RETRIES 5
 
-bool isDirectory(char *dirname);
-int getPacketType(char incomingPacket[]);
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
 void sendDataPacket(C150DgmSocket *sock, char filename[], 
@@ -148,41 +148,6 @@ int main(int argc, char *argv[]) {
     
 
     return 0;
-}
-
-
-// ------------------------------------------------------
-//
-//                   isDirectory
-//
-//  Check if the supplied file name is a directory
-//  
-//  See references up top
-//     
-// ------------------------------------------------------
-
-bool isDirectory(char *dirname) {
-    struct stat statbuf;
-
-    if (stat(dirname, &statbuf) != 0)
-        return 0;
-    return S_ISDIR(statbuf.st_mode);
-}
-
-// ------------------------------------------------------
-//
-//                   getPacketType
-//
-//  Given an incoming packet, extract and return the 
-//  packet type
-//     
-// ------------------------------------------------------
-int getPacketType(char incomingPacket[]) {
-    int packetType;
-    memcpy(&packetType, incomingPacket, sizeof(int));
-    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
-    
-    return packetType;
 }
 
 // ------------------------------------------------------
@@ -320,6 +285,7 @@ void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,
     }
     
     comparisonResult = compareHash(filename, dirName, filenastiness, incomingChecksumPacket);
+    
     sendConfirmationPacket(sock, (char *) filename.c_str(), dirName, filenastiness, comparisonResult, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
     printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), 0);
 

@@ -14,7 +14,7 @@
 #define DATA_PACKET_LEN 512
 #define CHECKSUM_PACKET_LEN 74
 #define CONFIRMATION_PACKET_LEN 55
-// #define FINISH_PACKET_LEN
+#define FINISH_PACKET_LEN 54
 
 #define FILENAME_LEN 50
 
@@ -47,7 +47,6 @@ struct ConfirmationPacket {
 struct FinishPacket {
     const int packetType = 4;
     char filename[FILENAME_LEN];
-    bool result;
 };
 
 #endif

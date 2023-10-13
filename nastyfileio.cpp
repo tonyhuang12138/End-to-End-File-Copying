@@ -30,6 +30,41 @@
 using namespace std;
 using namespace C150NETWORK;
 
+// ------------------------------------------------------
+//
+//                   getPacketType
+//
+//  Given an incoming packet, extract and return the 
+//  packet type
+//     
+// ------------------------------------------------------
+int getPacketType(char incomingPacket[]) {
+    int packetType;
+    memcpy(&packetType, incomingPacket, sizeof(int));
+    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
+    
+    return packetType;
+}
+
+
+// ------------------------------------------------------
+//
+//                   isDirectory
+//
+//  Check if the supplied file name is a directory
+//  
+//  See references up top
+//     
+// ------------------------------------------------------
+
+bool isDirectory(char *dirname) {
+    struct stat statbuf;
+
+    if (stat(dirname, &statbuf) != 0)
+        return 0;
+    return S_ISDIR(statbuf.st_mode);
+}
+
 
 // ------------------------------------------------------
 //

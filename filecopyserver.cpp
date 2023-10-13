@@ -37,14 +37,14 @@
 #include <sys/stat.h>
 #include <bits/stdc++.h>
 #include "sha1.h"
-// #include <string>
+#include "nastyfileio.h"
+#include <string>
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
 # define MAX_RETRIES 5
 
-int getPacketType(char incomingPacket[]);
 void receiveDataPackets(C150DgmSocket *sock, string dirName, 
                         int filenastiness);
 void checksumPhase(C150DgmSocket *sock, string filename, string dirName,  
@@ -54,6 +54,11 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
                         int outgoingChecksumPacketSize);
 void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
                                char outgoingChecksumPacket[]);
+void finishPhase(C150DgmSocket *sock, string filename, string dirName, 
+                 int filenastiness);
+void renameOrRemove(string filename, string dirName, int filenastiness, 
+                    char incomingConfirmationPacket[], 
+                    int incomingConfirmationPacketSize);
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
 const int filenastinessArg = 2;           // filenastiness is 2nd arg
@@ -179,23 +184,6 @@ void receiveDataPackets(C150DgmSocket *sock, string dirName,
 
 // ------------------------------------------------------
 //
-//                   getPacketType
-//
-//  Given an incoming packet, extract and return the 
-//  packet type
-//     
-// ------------------------------------------------------
-int getPacketType(char incomingPacket[]) {
-    int packetType;
-    memcpy(&packetType, incomingPacket, sizeof(int));
-    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
-    
-    return packetType;
-}
-
-
-// ------------------------------------------------------
-//
 //                   checksum
 //
 //  Assuming that file has been received in whole, send
@@ -238,7 +226,13 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
     cout << "strcmp " << strcmp(filename, checksumPacket.filename) << endl;
     cout << checksumPacket.packetType << " " << checksumPacket.filename << endl;
 
-    sha1(filename, dirName, filenastiness, checksum);
+    // HERE!
+    string tempFilename = filename;
+    tempFilename += "-TMP";
+
+    printf("Original filename is %s, adjusted temp filename is %s\n", filename, tempFilename.c_str());
+    
+    sha1(tempFilename, dirName, filenastiness, checksum);
     
     printf("Printing calculated checksum: ");
     for (int i = 0; i < 20; i++)
@@ -315,8 +309,67 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
         timeoutStatus = true;
     }
 
-    // HERE!
-
+    // TODO: compute hash again after writing
+    // finishPhase(sock, filename, dirName, filenastiness, incomingConfirmationPacket, CHECKSUM_PACKET_LEN);
     // File: <name> end-to-end check succeeded
     // File: <name> end-to-end check failed
 }
+
+
+void finishPhase(C150DgmSocket *sock, string filename, string dirName, 
+                 int filenastiness, char incomingConfirmationPacket[], 
+                 int incomingConfirmationPacketSize) {
+    assert(sock != NULL);
+
+    int packetType;
+    char outgoingFinishPacket[FINISH_PACKET_LEN];
+
+    // validate packet type
+    packetType = getPacketType(incomingConfirmationPacket);
+    if (packetType != CHECKSUM_PACKET_TYPE) { 
+        fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
+        return; // retry ???
+    }
+
+    renameOrRemove(filename, dirName, filenastiness, incomingConfirmationPacket, incomingConfirmationPacketSize);
+
+    (void) outgoingFinishPacket;
+    // sendFinishPacket(sock, (char *) filename.c_str(), dirName, filenastiness, outgoingFinishPacket, FINISH_PACKET_LEN);
+    // printf("Sent finish packet for file %s, retry %d\n", filename.c_str(), 0);
+}
+
+
+void renameOrRemove(string filename, string dirName, int filenastiness, 
+                    char incomingConfirmationPacket[], 
+                    int incomingConfirmationPacketSize) {
+    cout << "In rename or remove\n";
+    
+    NASTYFILE file(filenastiness);
+    ConfirmationPacket *confirmationPacket = reinterpret_cast<ConfirmationPacket *>(incomingConfirmationPacket);
+
+    // TODO: check if the filename matches with current file
+    if (strcmp((char *) filename.c_str(), confirmationPacket->filename) != 0){
+        cout << memcmp((char *) filename.c_str(), confirmationPacket->filename, FILENAME_LEN);
+        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename.c_str(), confirmationPacket->filename);
+        return; // ??
+    }
+
+    // // opem file, retry if failed?
+    // fopenretval = inputFile.fopen(sourceName.c_str(), "rb");
+
+    // if (fopenretval == NULL) {
+    //   cerr << "Error opening input file " << sourceName << 
+    //     " errno=" << strerror(errno) << endl;
+    //   exit(12);
+    // }
+
+    // check if file transfer was successful
+    if (confirmationPacket->result) {
+        // rename
+
+        // check if rename success
+    } else {
+        // remove
+    }
+}
+
