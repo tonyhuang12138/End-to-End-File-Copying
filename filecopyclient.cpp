@@ -66,6 +66,9 @@ void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
                             int outgoingConfirmationPacketSize);
 bool compareHash(string filename, string dirName, 
                  int filenastiness, char incomingChecksumPacket[]);
+void receiveFinishPacket(C150DgmSocket *sock, string filename, 
+                         char outgoingConfirmationPacket[],
+                         int outgoingConfirmationPacketSize);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -168,7 +171,13 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     printf("Sent data packet for file %s, retry %d\n", filename.c_str(), 0);
 
     *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
-        
+
+    // HERE!
+    // TODO: 
+    // 1. Need to check filename before proceeding to next phase, keep listening till the filename is right?
+    // 2. Pass the set of seen filenames around?
+    // Modularize retry and sends
+
     receiveChecksumPacket(sock, filename, dirName, filenastiness, 
                           outgoingDataPacket);
 }
@@ -289,14 +298,13 @@ void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,
     sendConfirmationPacket(sock, (char *) filename.c_str(), dirName, filenastiness, comparisonResult, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
     printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), 0);
 
-    // receiveFinishPacket(sock, filename, outgoingConfirmationPacket);
+    receiveFinishPacket(sock, filename, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
 }
 
 
 bool compareHash(string filename, string dirName, 
                  int filenastiness, char incomingChecksumPacket[]) {
     cout << "In compare hash\n";
-    bool comparisonResult;
     
     unsigned char localChecksum[HASH_CODE_LENGTH];
     ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
@@ -315,16 +323,14 @@ bool compareHash(string filename, string dirName,
     // compare checksums
     cout << "Comparing hash\n";
     if (memcmp(localChecksum, checksumPacket->checksum, HASH_CODE_LENGTH) == 0) {
-        comparisonResult = true;
         printf("End to end succeeded for file %s", filename.c_str());
         *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 1 << endl;
+        return true;
     } else {
-        comparisonResult = false;
         printf("End to end failed for file %s", filename.c_str());
         *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 1 << endl;
+        return false;
     }
-
-    return comparisonResult;
 }
 
 
@@ -340,6 +346,8 @@ void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
     // wait for server response
     ConfirmationPacket confirmationPacket;
 
+    confirmationPacket.comparisonResult = comparisonResult;
+
     memcpy(confirmationPacket.filename, filename, strlen(filename) + 1);
     cout << "strcmp " << strcmp(filename, confirmationPacket.filename) << endl;
     cout << confirmationPacket.packetType << " " << confirmationPacket.filename << endl;
@@ -348,4 +356,70 @@ void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
     // write
     cout << "write len " <<  outgoingConfirmationPacket << endl;
     sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
+}
+
+
+void receiveFinishPacket(C150DgmSocket *sock, string filename, 
+                         char outgoingConfirmationPacket[],
+                         int outgoingConfirmationPacketSize) {
+    assert(sock != NULL);
+    //
+    // Variable declarations
+    //
+    ssize_t readlen;              // amount of data read from socket
+    char incomingFinishPacket[FINISH_PACKET_LEN];
+    int retry_i = 0;
+    bool timeoutStatus;
+    int packetType;
+
+    printf("Receiving finish packet for file %s\n", filename.c_str());
+    assert(FINISH_PACKET_LEN == sizeof(incomingFinishPacket));
+    readlen = sock -> read(incomingFinishPacket, CHECKSUM_PACKET_LEN);
+    timeoutStatus = sock -> timedout();
+
+    cout << "Timeout status is: " << timeoutStatus << endl;
+
+    // validate size of received packet
+    if (readlen == 0) {
+        c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
+        timeoutStatus = true;
+    }
+
+    // keep resending message up to MAX_RETRIES times when read timedout
+    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
+        retry_i++;
+
+        // Send the message to the server
+        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
+        //                 argv[0], outgoingMsg);
+        sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
+        printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), retry_i);
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+        readlen = sock -> read(incomingFinishPacket, FINISH_PACKET_LEN);
+        cout << "Reading...\n" << endl;
+        timeoutStatus = sock -> timedout();
+
+        // retry if wrong packet type received
+        if (!timeoutStatus) {
+            packetType = getPacketType(incomingFinishPacket);
+            if (packetType != FINISH_PACKET_TYPE) { 
+                fprintf(stderr,"Should be receiving checksum finish packets but packet of packetType %d received.\n", packetType);
+                timeoutStatus = true;
+            }
+        }
+    }
+
+    // throw exception if all retries exceeded
+    if (retry_i == MAX_RETRIES) {
+        throw C150NetworkException("Timed out after 5 retries.");
+    }
+
+    printf("Finish packet for file %s received\n", filename.c_str());
+    // write flush logic
+    // HERE!
+    // TODO: if wrong packet type, retry and listen for more?
+    // TODO: write a retry utility function
+    // validate packet type
 }

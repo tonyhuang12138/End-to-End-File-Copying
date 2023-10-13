@@ -53,12 +53,17 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
                         int filenastiness, char outgoingChecksumPacket[], 
                         int outgoingChecksumPacketSize);
 void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
-                               char outgoingChecksumPacket[]);
+                               string dirName, char outgoingChecksumPacket[]);
 void finishPhase(C150DgmSocket *sock, string filename, string dirName, 
-                 int filenastiness);
+                 int filenastiness, char incomingConfirmationPacket[], 
+                 int incomingConfirmationPacketSize);
+void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
+                               string dirName, int filenastiness,
+                               char outgoingChecksumPacket[]);
 void renameOrRemove(string filename, string dirName, int filenastiness, 
                     char incomingConfirmationPacket[], 
                     int incomingConfirmationPacketSize);
+void sendFinishPacket(C150DgmSocket *sock, string filename);
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
 const int filenastinessArg = 2;           // filenastiness is 2nd arg
@@ -172,6 +177,19 @@ void receiveDataPackets(C150DgmSocket *sock, string dirName,
                     (size_t) dataPacket->numTotalPackets) {
             *GRADING << "File: " << filename << " received, beginning end-to-end check" << endl;
 
+            cout << "Renaming" << endl;
+            string tempFilename = filename;
+            tempFilename += "-TMP";
+            string tempFullPath = dirName + '/' + tempFilename;
+            string fullPath = dirName + '/' + filename;
+            // rename
+            // check if rename success
+            if (rename(fullPath.c_str(), tempFullPath.c_str()) != 0) {
+                fprintf(stderr, "Error renaming file %s to %s\n", fullPath.c_str(), tempFullPath.c_str());
+            } else {
+                cout << "File renamed successfully" << endl;
+            }
+
             checksumPhase(sock, filename, dirName, filenastiness);
 
             // reset transmission stats for next file
@@ -200,7 +218,7 @@ void checksumPhase(C150DgmSocket *sock, string filename, string dirName,
                        outgoingChecksumPacket, CHECKSUM_PACKET_LEN);
     printf("Sent checksum packet for file %s, retry %d\n", filename.c_str(), 0);
 
-    receiveConfirmationPacket(sock, filename, outgoingChecksumPacket);
+    receiveConfirmationPacket(sock, filename, dirName, filenastiness, outgoingChecksumPacket);
 }
 
 // ------------------------------------------------------
@@ -226,7 +244,7 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
     cout << "strcmp " << strcmp(filename, checksumPacket.filename) << endl;
     cout << checksumPacket.packetType << " " << checksumPacket.filename << endl;
 
-    // HERE!
+
     string tempFilename = filename;
     tempFilename += "-TMP";
 
@@ -260,6 +278,7 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
 
 
 void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
+                               string dirName, int filenastiness,
                                char outgoingChecksumPacket[]) {
     assert(sock != NULL);
 
@@ -301,7 +320,9 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
     }
 
     // write flush logic
-
+    // HERE!
+    // TODO: if wrong packet type, retry and listen for more?
+    // TODO: write a retry utility function
     // validate packet type
     packetType = getPacketType(incomingConfirmationPacket);
     if (packetType != CONFIRMATION_PACKET_TYPE) { 
@@ -310,7 +331,7 @@ void receiveConfirmationPacket(C150DgmSocket *sock, string filename,
     }
 
     // TODO: compute hash again after writing
-    // finishPhase(sock, filename, dirName, filenastiness, incomingConfirmationPacket, CHECKSUM_PACKET_LEN);
+    finishPhase(sock, filename, dirName, filenastiness, incomingConfirmationPacket, CHECKSUM_PACKET_LEN);
     // File: <name> end-to-end check succeeded
     // File: <name> end-to-end check failed
 }
@@ -321,21 +342,16 @@ void finishPhase(C150DgmSocket *sock, string filename, string dirName,
                  int incomingConfirmationPacketSize) {
     assert(sock != NULL);
 
-    int packetType;
-    char outgoingFinishPacket[FINISH_PACKET_LEN];
-
     // validate packet type
-    packetType = getPacketType(incomingConfirmationPacket);
-    if (packetType != CHECKSUM_PACKET_TYPE) { 
+    int packetType = getPacketType(incomingConfirmationPacket);
+    if (packetType != CONFIRMATION_PACKET_TYPE) { 
         fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
         return; // retry ???
     }
 
     renameOrRemove(filename, dirName, filenastiness, incomingConfirmationPacket, incomingConfirmationPacketSize);
 
-    (void) outgoingFinishPacket;
-    // sendFinishPacket(sock, (char *) filename.c_str(), dirName, filenastiness, outgoingFinishPacket, FINISH_PACKET_LEN);
-    // printf("Sent finish packet for file %s, retry %d\n", filename.c_str(), 0);
+    sendFinishPacket(sock, (char *) filename.c_str());
 }
 
 
@@ -346,6 +362,9 @@ void renameOrRemove(string filename, string dirName, int filenastiness,
     
     NASTYFILE file(filenastiness);
     ConfirmationPacket *confirmationPacket = reinterpret_cast<ConfirmationPacket *>(incomingConfirmationPacket);
+    string tempFilename = filename;
+    tempFilename += "-TMP";
+    string tempFullPath = dirName + '/' + tempFilename;
 
     // TODO: check if the filename matches with current file
     if (strcmp((char *) filename.c_str(), confirmationPacket->filename) != 0){
@@ -354,22 +373,91 @@ void renameOrRemove(string filename, string dirName, int filenastiness,
         return; // ??
     }
 
-    // // opem file, retry if failed?
-    // fopenretval = inputFile.fopen(sourceName.c_str(), "rb");
-
-    // if (fopenretval == NULL) {
-    //   cerr << "Error opening input file " << sourceName << 
-    //     " errno=" << strerror(errno) << endl;
-    //   exit(12);
-    // }
-
     // check if file transfer was successful
-    if (confirmationPacket->result) {
-        // rename
+    if (confirmationPacket->comparisonResult) {  // rename
+        *GRADING << "File: " << filename << " end-to-end check succeeded" << endl;
+    
+        cout << "Renaming" << endl;
+        string fullPath = dirName + '/' + filename;
 
         // check if rename success
-    } else {
-        // remove
+        // retry if failed?
+        if (rename(tempFullPath.c_str(), fullPath.c_str()) != 0) {
+            fprintf(stderr, "Error renaming file %s to %s\n", tempFullPath.c_str(), fullPath.c_str());
+        } else {
+            cout << "File renamed successfully" << endl;
+        }
+    } else {      
+        *GRADING << "File: " << filename << " end-to-end check failed" << endl;                    // remove
+        cout << "Removing" << endl;
+        if (remove(tempFullPath.c_str()) != 0) {
+            fprintf(stderr, "Unable to remove the file\n");
+
+        } else {
+            printf("File removed successfully\n");
+        }
     }
 }
 
+
+void sendFinishPacket(C150DgmSocket *sock, string filename) {
+    assert(sock != NULL);
+
+    char outgoingFinishPacket[FINISH_PACKET_LEN];
+    FinishPacket finishPacket;
+
+    memcpy(finishPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
+    cout << "strcmp " << strcmp(filename.c_str(), finishPacket.filename) << endl;
+    cout << finishPacket.packetType << " " << finishPacket.filename << endl;
+    memcpy(outgoingFinishPacket, &finishPacket, sizeof(finishPacket));
+
+    // write
+    cout << "write len " <<  outgoingFinishPacket << endl;
+    sock -> write(outgoingFinishPacket, FINISH_PACKET_LEN);
+    printf("Sent finish packet for file %s, retry %d\n", filename.c_str(), 0);
+
+    // retry: expect next file's packet (data packet)
+    ssize_t readlen;              // amount of data read from socket
+    char incomingDataPacket[DATA_PACKET_LEN];
+    int retry_i = 0;
+    bool timeoutStatus;
+    int packetType;
+
+    printf("Receiving data packet for the next file\n");
+    assert(DATA_PACKET_LEN == sizeof(incomingDataPacket));
+    readlen = sock -> read(incomingDataPacket, DATA_PACKET_LEN);
+    timeoutStatus = sock -> timedout();
+
+    cout << "Timeout status is: " << timeoutStatus << endl;
+
+    // validate size of received packet
+    if (readlen == 0) {
+        c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
+        timeoutStatus = true;
+    }
+
+    // keep resending message up to MAX_RETRIES times when read timedout
+    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
+        retry_i++;
+
+        // Send the message to the server
+        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
+        //                 argv[0], outgoingMsg);
+        sock -> write(outgoingFinishPacket, FINISH_PACKET_LEN);
+        printf("Sent finish packet for file %s, retry %d\n", filename.c_str(), retry_i);
+
+        // Read the response from the server
+        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
+        readlen = sock -> read(incomingDataPacket, FINISH_PACKET_LEN);
+        timeoutStatus = sock -> timedout();
+
+        // retry if wrong packet type received
+        if (!timeoutStatus) {
+            packetType = getPacketType(incomingDataPacket);
+            if (packetType != DATA_PACKET_LEN) { 
+                fprintf(stderr,"Should be receiving data packets but packet of packetType %d received.\n", packetType);
+                timeoutStatus = true;
+            }
+        }
+    }
+}

@@ -40,7 +40,7 @@ struct ChecksumPacket {
 struct ConfirmationPacket {
     const int packetType = 3;
     char filename[FILENAME_LEN];
-    bool result;
+    bool comparisonResult;
 };
 
 // server to client
