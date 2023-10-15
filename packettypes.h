@@ -4,20 +4,24 @@
 #include "sha1.h"
 
 #define DATA_PACKET_TYPE 1
-#define CHECKSUM_PACKET_TYPE 2
-#define CONFIRMATION_PACKET_TYPE 3
-#define FINISH_PACKET_TYPE 4
+#define CHUNK_CHECK_PACKET_TYPE 2
+#define CS_REQUEST_PACKET_TYPE 3
+#define CS_RESPONSE_PACKET_TYPE 4
+#define CS_COMPARISON_PACKET_TYPE 5
+#define FINISH_PACKET_TYPE 6
 
 #define PACKET_TYPE_OFFSET 0
 #define PACKET_TYPE_LEN 4
 
-#define DATA_PACKET_LEN 512
-#define CHECKSUM_PACKET_LEN 74
-#define CONFIRMATION_PACKET_LEN 55
-#define FINISH_PACKET_LEN 54
+#define MAX_PACKET_LEN 512
+// #define DATA_PACKET_LEN 512
+// #define CS_REQUEST_PACKET_LEN 54
+// #define CHUNK_CHECK_PACKET_LEN 2
+// #define CS_RESPONSE_PACKET_LEN 74
+// #define CS_COMPARISON_PACKET_LEN 55
 
 #define FILENAME_LEN 50
-
+#define CHUNK_SIZE 8
 
 // client to server
 struct DataPacket {
@@ -30,22 +34,36 @@ struct DataPacket {
 };
 
 // server to client
-struct ChecksumPacket {
+struct ChunkCheckPacket {
     const int packetType = 2;
+    char filename[FILENAME_LEN]; 
+    int cycleNumber;
+    char chunkCheck[CHUNK_SIZE];
+};
+
+// client to server
+struct ChecksumRequestPacket {
+    const int packetType = 3;
+    char filename[FILENAME_LEN]; 
+};
+
+// server to client
+struct ChecksumResponsePacket {
+    const int packetType = 4;
     char filename[FILENAME_LEN];
     unsigned char checksum[HASH_CODE_LENGTH];
 };
 
 // client to server
-struct ConfirmationPacket {
-    const int packetType = 3;
+struct ChecksumComparisonPacket {
+    const int packetType = 5;
     char filename[FILENAME_LEN];
     bool comparisonResult;
 };
 
 // server to client
 struct FinishPacket {
-    const int packetType = 4;
+    const int packetType = 6;
     char filename[FILENAME_LEN];
 };
 

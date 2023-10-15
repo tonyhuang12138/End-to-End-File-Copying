@@ -7,13 +7,13 @@ client side:
         - [] compute hash and compare server's hash
         - [] send confirmation to server
         - [] read server response
-            - [] if not timeout
-                - [] return (copy next file)
-            - [] while timeout and retries available:
-                - [] resend
-                - [] read server response
-            - [] if no retries available
-                - [] declare network failure
+        - [] if not timeout
+            - [] return (copy next file)
+        - [] while timeout and retries available:
+            - [] resend
+            - [] read server response
+        - [] if no retries available
+            - [] declare network failure
     - [] while timeout and retries available:
         - [v] resend
         - [v] read server response

@@ -47,7 +47,8 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-# define MAX_RETRIES 5
+#define MAX_RETRIES 5
+#define MAX_FLUSH_RETRIES 10
 
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
@@ -87,19 +88,12 @@ int main(int argc, char *argv[]) {
     //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
     //
     GRADEME(argc, argv);
-
-    //
-    //  Set up debug message logging
-    //
-    // setUpDebugLogging("filecopyclientdebug.txt",argc, argv);
     
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
 
-    // Create the socket
-    // TODO: maybe setup debugging log?
+    // create the socket and tell the DGMSocket which server to talk to
     C150DgmSocket *sock = new C150NastyDgmSocket(networknastiness);
-    // Tell the DGMSocket which server to talk to
     sock -> setServerName(argv[serverArg]);  
     sock -> turnOnTimeouts(3000);
 
@@ -121,18 +115,9 @@ int main(int argc, char *argv[]) {
             if (!f->d_name || isDirectory(path)) {
                 continue; 
             }
-
-            // can there be null characters in a filename?
-            // printf("%ld\n", strlen(f->d_name));
-            // string filename;
-            // strcpy(filename, f->d_name);
-            // printf("%s\n", filename.c_str());
-
-
-            // the final submission should include a while loop to send all packets of a file. here we are simulating data transmission init and complete in one dummy data packet.
-
-            // timeout logic
+            
             copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
+            // listen(sock, f->d_name, argv[srcdirArg], filenastiness));
         }
 
         closedir(SRC);
@@ -152,6 +137,65 @@ int main(int argc, char *argv[]) {
 
     return 0;
 }
+
+
+// void listen(C150DgmSocket *sock, string filename, string dirName,  
+//               int filenastiness) {
+//     assert(sock != NULL);
+
+//     char incomingPacket[MAX_PACKET_LEN];
+//     int expectedPacketType = CHUNK_CHECK_PACKET_TYPE;
+//     int numRetried = 0;
+//     int numFlushed = 0;
+//     int packetType;
+//     int numTotalChunks = 0;
+//     int currChunkNum = 0;
+//     bool timeout;
+//     bool flush;
+
+//     while (timeout && numRetried < MAX_RETRIES) {
+//         // phase 1: send data and check bytemap
+
+//         // calculate number of chunks in file
+//         numTotalChunks = getTotalChunks(filename, dirName);
+//         // keep sending while there are more chunks left
+//         while (currChunkNum < numTotalChunks) {
+//             chunk = getChunk(filename, dirName, currChunkNum);
+//             sendChunk(sock, chunk);
+//             flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // flush if wrong packet type
+
+//             while (flush && numFlushed < MAX_FLUSH_RETRIES) {
+//                 flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // flush if wrong packet type
+//                 fprintf(stderr, "Received packet of wrong type %d times, exiting.", MAX_FLUSH_RETRIES);
+//             }
+//             // numFlushed = 0;
+
+//             // keep sending chunks until full chunk is successfully delivered
+//             while (sizeof(failedPackets) != 0) {
+//                 // check packet type here
+//                 flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // calls sock -> read
+
+//                 // declare network failure
+//                 if (timeout == false || numRetried == MAX_RETRIES) {
+//                     // print network failure log
+//                     return;
+//                 }
+//             }
+
+//             flush = false;
+//             currChunkNum++;
+//         }
+
+//         expectedPacketType = CHECKSUM_PACKET_TYPE;
+
+//         numRetried++;
+//     }
+// }
+
+
+// void sendChunk() {
+//     // load chunk with packets
+// }
 
 // ------------------------------------------------------
 //
@@ -234,40 +278,40 @@ void receiveChecksumPacket(C150DgmSocket *sock, string filename,
     //
     ssize_t readlen;              // amount of data read from socket
     char incomingChecksumPacket[CHECKSUM_PACKET_LEN];
-    int retry_i = 0;
-    bool timeoutStatus;
+    int numRetried = 0;
+    bool timeout;
 
     printf("Receiving checksum packet for file %s\n", filename.c_str());
     assert(CHECKSUM_PACKET_LEN == sizeof(incomingChecksumPacket));
     readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-    timeoutStatus = sock -> timedout();
+    timeout = sock -> timedout();
 
-    cout << "Timeout status is: " << timeoutStatus << endl;
+    cout << "Timeout status is: " << timeout << endl;
 
     // validate size of received packet
     if (readlen == 0) {
         c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
-        timeoutStatus = true;
+        timeout = true;
     }
 
     // keep resending message up to MAX_RETRIES times when read timedout
-    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
-        retry_i++;
+    while (timeout == true && numRetried < MAX_RETRIES) {
+        numRetried++;
 
         // Send the message to the server
         // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
         //                 argv[0], outgoingMsg);
         sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
-        printf("Sent data packet for file %s, retry %d\n", filename.c_str(), retry_i);
+        printf("Sent data packet for file %s, retry %d\n", filename.c_str(), numRetried);
 
         // Read the response from the server
         // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
         readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-        timeoutStatus = sock -> timedout();
+        timeout = sock -> timedout();
     }
 
     // throw exception if all retries exceeded
-    if (retry_i == MAX_RETRIES) {
+    if (numRetried == MAX_RETRIES) {
         throw C150NetworkException("Timed out after 5 retries.");
     }
 
@@ -289,7 +333,7 @@ void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,
     // validate packet type
     packetType = getPacketType(incomingChecksumPacket);
     if (packetType != CHECKSUM_PACKET_TYPE) { 
-        fprintf(stderr,"Should be receiving checksum confirmation packets but packet of packetType %d received.\n", packetType);
+        fprintf(stderr,"Should be receiving checksum packets but packet of packetType %d received.\n", packetType);
         return; // retry ???
     }
     
@@ -368,51 +412,51 @@ void receiveFinishPacket(C150DgmSocket *sock, string filename,
     //
     ssize_t readlen;              // amount of data read from socket
     char incomingFinishPacket[FINISH_PACKET_LEN];
-    int retry_i = 0;
-    bool timeoutStatus;
+    int numRetried = 0;
+    bool timeout;
     int packetType;
 
     printf("Receiving finish packet for file %s\n", filename.c_str());
     assert(FINISH_PACKET_LEN == sizeof(incomingFinishPacket));
     readlen = sock -> read(incomingFinishPacket, CHECKSUM_PACKET_LEN);
-    timeoutStatus = sock -> timedout();
+    timeout = sock -> timedout();
 
-    cout << "Timeout status is: " << timeoutStatus << endl;
+    cout << "Timeout status is: " << timeout << endl;
 
     // validate size of received packet
     if (readlen == 0) {
         c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
-        timeoutStatus = true;
+        timeout = true;
     }
 
     // keep resending message up to MAX_RETRIES times when read timedout
-    while (timeoutStatus == true && retry_i < MAX_RETRIES) {
-        retry_i++;
+    while (timeout == true && numRetried < MAX_RETRIES) {
+        numRetried++;
 
-        // Send the message to the server
+        // Send the message to the server`
         // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
         //                 argv[0], outgoingMsg);
         sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
-        printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), retry_i);
+        printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), numRetried);
 
         // Read the response from the server
         // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
         readlen = sock -> read(incomingFinishPacket, FINISH_PACKET_LEN);
         cout << "Reading...\n" << endl;
-        timeoutStatus = sock -> timedout();
+        timeout = sock -> timedout();
 
         // retry if wrong packet type received
-        if (!timeoutStatus) {
+        if (!timeout) {
             packetType = getPacketType(incomingFinishPacket);
             if (packetType != FINISH_PACKET_TYPE) { 
                 fprintf(stderr,"Should be receiving checksum finish packets but packet of packetType %d received.\n", packetType);
-                timeoutStatus = true;
+                timeout = true;
             }
         }
     }
 
     // throw exception if all retries exceeded
-    if (retry_i == MAX_RETRIES) {
+    if (numRetried == MAX_RETRIES) {
         throw C150NetworkException("Timed out after 5 retries.");
     }
 
