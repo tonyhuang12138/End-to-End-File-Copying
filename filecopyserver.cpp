@@ -48,8 +48,7 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness);
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
-                        int filenastiness, char outgoingChecksumPacket[], 
-                        int outgoingChecksumPacketSize);
+                        int filenastiness);
 void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
                                string dirName, int filenastiness,
                                char outgoingChecksumPacket[]);
@@ -112,7 +111,8 @@ int main(int argc, char *argv[])  {
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness) {
     char incomingPacket[MAX_PACKET_LEN];   // received message data
-    string currFilename = "";
+    char currFilename[FILENAME_LEN];
+    char incomingFilename[FILENAME_LEN];
     string incomingPacketFilename;
     ssize_t readlen;             // amount of data read from socket
     int packetType;
@@ -128,6 +128,10 @@ void receivePackets(C150DgmSocket *sock, string dirName,
         }
 
         // validate filename: not here!
+        getFilename(incomingPacket, incomingFilename);
+        printf("Received packet of filename %s\n", incomingFilename);
+        // TODO: for now
+        strcpy(currFilename, incomingFilename);
         // if not "" and not currFilename and not in proccessedFiles
         // -> file later in the timeline (impossible) -> abort?
         // reset currFilename to "" after proccessing file?
@@ -147,9 +151,9 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 // TODO: can we have duplicates logs?
                 *GRADING << "File: " << currFilename << " received, beginning end-to-end check" << endl;
 
-                sendChecksumPacket(sock, (char *) currFilename.c_str(), dirName, filenastiness);
+                sendChecksumPacket(sock, currFilename, dirName, filenastiness);
 
-                printf("Sent checksum packet for file %s, retry %d\n", currFilename.c_str(), 0);
+                printf("Sent checksum packet for file %s, retry %d\n", currFilename, 0);
                 break;
 
             case CS_COMPARISON_PACKET_TYPE: 
@@ -159,7 +163,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                 renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
-                sendFinishPacket(sock, (char *) currFilename.c_str());
+                sendFinishPacket(sock, currFilename);
                 break;
 
             default:

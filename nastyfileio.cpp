@@ -26,6 +26,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "nastyfileio.h"
+#include "packettypes.h"
 
 using namespace std;
 using namespace C150NETWORK;
@@ -41,9 +42,56 @@ using namespace C150NETWORK;
 int getPacketType(char incomingPacket[]) {
     int packetType;
     memcpy(&packetType, incomingPacket, sizeof(int));
-    printf("packetTypeArr %s %d\n", incomingPacket, packetType);
+    printf("Packet type is %s\n", packetTypeStringMatch(packetType).c_str());
     
     return packetType;
+}
+
+// --------------------------------------------------------------------------
+//
+//                           packetTypeStringMatch
+//
+//  Given a packet type integer, return the corresponding string
+//     
+// --------------------------------------------------------------------------
+string packetTypeStringMatch(int packetType) {
+    // match packet type for output message
+    switch (packetType) {
+        case DATA_PACKET_TYPE:
+            return "data";
+
+        case CHUNK_CHECK_PACKET_TYPE:
+            return "chunk check";
+        
+        case CS_REQUEST_PACKET_TYPE:
+            return "checksum request";
+
+        case CS_RESPONSE_PACKET_TYPE:
+            return "checksum response";
+
+        case CS_COMPARISON_PACKET_TYPE:
+            return "checksum comparison";
+
+        case FINISH_PACKET_TYPE:
+            return "finish";
+
+        default:
+            fprintf(stderr, "Invalid packet type provided: %d\n", packetType);
+            return "invalid type";
+    }
+}
+
+// ------------------------------------------------------
+//
+//                   getFilename
+//
+//  Given an incoming packet, extract and return the 
+//  filename
+//     
+// ------------------------------------------------------
+void getFilename(char incomingPacket[], char filename[]) {
+    strcpy(filename, incomingPacket + PACKET_TYPE_LEN);
+    printf("Filename is %s\n", filename);
 }
 
 

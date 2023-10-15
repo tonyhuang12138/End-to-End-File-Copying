@@ -1,3 +1,6 @@
 filecopyserver
 filecopyclient
 sha1tester
+filecopyserver.o
+filecopyclient.o
+sha1tester.o

@@ -50,26 +50,40 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 #define MAX_RETRIES 5
 #define MAX_FLUSH_RETRIES 10
 
+// file copy functions
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
-void sendDataPacket(C150DgmSocket *sock, char filename[], 
-                    char outgoingDataPacket[], int outgoingDataPacketSize);
-void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
-                           string dirName, int filenastiness,
-                           char outgoingDataPacket[]);
-void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
-                        int filenastiness, char incomingChecksumPacket[], 
-                        int incomingChecksumPacketSize);
-void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
-                            string dirName, int filenastiness, 
-                            bool comparisonResult,
-                            char outgoingConfirmationPacket[], 
-                            int outgoingConfirmationPacketSize);
-bool compareHash(string filename, string dirName, 
-                 int filenastiness, char incomingChecksumPacket[]);
-void receiveFinishPacket(C150DgmSocket *sock, string filename, 
-                         char outgoingConfirmationPacket[],
-                         int outgoingConfirmationPacketSize);
+
+// end to end functions
+void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
+                         char incomingResponsePacket[]);
+void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
+                              string dirName, int filenastiness, 
+                              char incomingResponsePacket[]);
+
+// utility functions
+void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
+                  char incomingPacket[], int outgoingPacketType, 
+                  int incomingPacketType);
+
+// void sendDataPacket(C150DgmSocket *sock, char filename[], 
+//                     char outgoingDataPacket[], int outgoingDataPacketSize);
+// void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
+//                            string dirName, int filenastiness,
+//                            char outgoingDataPacket[]);
+// void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
+//                         int filenastiness, char incomingResponsePacket[], 
+//                         int incomingResponsePacketSize);
+// void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
+//                             string dirName, int filenastiness, 
+//                             bool comparisonResult,
+//                             char outgoingComparisonPacket[], 
+//                             int outgoingConfirmationPacketSize);
+bool compareHash(char filename[], string dirName, 
+                 int filenastiness, char incomingResponsePacket[]);
+// void receiveFinishPacket(C150DgmSocket *sock, string filename, 
+//                          char outgoingComparisonPacket[],
+//                          int outgoingConfirmationPacketSize);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -116,8 +130,13 @@ int main(int argc, char *argv[]) {
                 continue; 
             }
             
-            copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
-            // listen(sock, f->d_name, argv[srcdirArg], filenastiness));
+            // copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
+
+            // end to end functions
+            (void) filenastiness;
+            char incomingResponsePacket[MAX_PACKET_LEN];
+            sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
+            sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
         }
 
         closedir(SRC);
@@ -133,7 +152,6 @@ int main(int argc, char *argv[]) {
         cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation()\
                         << endl;
     }
-    
 
     return 0;
 }
@@ -204,159 +222,127 @@ int main(int argc, char *argv[]) {
 //  Given a filename, copy it to server
 //     
 // ------------------------------------------------------
-void copyFile(C150DgmSocket *sock, string filename, string dirName,  
-              int filenastiness) {
-    char outgoingDataPacket[DATA_PACKET_LEN]; // TODO: null terminate this?
+// void copyFile(C150DgmSocket *sock, string filename, string dirName,  
+//               int filenastiness) {
+//     char outgoingDataPacket[MAX_PACKET_LEN]; // TODO: null terminate this?
 
-    // Start sending
-    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
+//     // Start sending
+//     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
-    sendDataPacket(sock, (char *) filename.c_str(), outgoingDataPacket, DATA_PACKET_LEN);
-    printf("Sent data packet for file %s, retry %d\n", filename.c_str(), 0);
+//     // send chunk logic
+//     // sendFile();
+
+//     generateDataPacket(sock, (char *) filename.c_str(), outgoingDataPacket);
+//     printf("Sent data packet for file %s, retry %d\n", filename.c_str(), 0);
+
+    
+
+
+// }
+
+/* --------------------------END TO END FUNCTIONS--------------------------- */
+
+// --------------------------------------------------------------------------
+//
+//                           sendChecksumRequest
+//
+//  
+//     
+// --------------------------------------------------------------------------
+void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
+                         char incomingResponsePacket[]) {
+    assert(sock != NULL);
+    assert(filename != NULL);
+    
+    char outgoingRequestPacket[MAX_PACKET_LEN];
+    ChecksumRequestPacket requestPacket;
+
+    // generating request packet
+    memcpy(requestPacket.filename, filename, strlen(filename) + 1);
+    memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
+
+    printf("Checksum request packet for %s generated\n", requestPacket.filename);
+
+    char packagedFilename[FILENAME_MAX];
+    getFilename(outgoingRequestPacket, packagedFilename);
+
+    printf("Double checking before send: filename in packet is %s\n", packagedFilename);
 
     *GRADING << "File: " << filename << " transmission complete, waiting for end-to-end check, attempt " << 1 << endl;
 
-    // HERE!
-    // TODO: 
-    // 1. Need to check filename before proceeding to next phase, keep listening till the filename is right?
-    // 2. Pass the set of seen filenames around?
-    // Modularize retry and sends
-
-    receiveChecksumPacket(sock, filename, dirName, filenastiness, 
-                          outgoingDataPacket);
+    sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, CS_REQUEST_PACKET_TYPE, CS_RESPONSE_PACKET_TYPE);
 }
 
 
 // ------------------------------------------------------
 //
-//                   sendDataPacket
+//                   generateDataPacket
 //
 //  Given a filename, send the parts of the data as a packet 
 //  to the server and write to outgoingDataPacket
 //     
 // ------------------------------------------------------
-void sendDataPacket(C150DgmSocket *sock, char filename[], 
-                    char outgoingDataPacket[], int outgoingDataPacketSize) {
-    // maybe remove it in final submission?
+// void generateDataPacket(C150DgmSocket *sock, char filename[], 
+//                     char outgoingDataPacket[]) {
+//     // maybe remove it in final submission?
+//     assert(sock != NULL);
+//     assert(filename != NULL);
+
+//     DataPacket dataPacket;
+
+//     // TODO: hardcoding only for the end to end submission, change later
+//     dataPacket.numTotalPackets = 1;
+//     dataPacket.packetNumber = 1;
+
+//     memcpy(dataPacket.filename, filename, strlen(filename) + 1);
+//     cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
+//     cout << dataPacket.packetType << " " << dataPacket.filename << endl;
+//     memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
+
+//     // write
+//     // cout << "write len " <<  outgoingDataPacketSize << endl;
+//     // sock -> write(outgoingDataPacket, outgoingDataPacketSize);
+// }
+
+
+void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
+                              string dirName, int filenastiness, 
+                              char incomingResponsePacket[]) {
     assert(sock != NULL);
     assert(filename != NULL);
+    
+    char outgoingComparisonPacket[MAX_PACKET_LEN];
+    char incomingFinishPacket[MAX_PACKET_LEN];
+    ChecksumComparisonPacket comparisonPacket;
 
-    DataPacket dataPacket;
+    comparisonPacket.comparisonResult = compareHash(filename, dirName, filenastiness, incomingResponsePacket);
 
-    // TODO: hardcoding only for the end to end submission, change later
-    dataPacket.numTotalPackets = 1;
-    dataPacket.packetNumber = 1;
+    memcpy(comparisonPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, comparisonPacket.filename) << endl;
+    cout << comparisonPacket.packetType << " " << comparisonPacket.filename << endl;
+    memcpy(outgoingComparisonPacket, &comparisonPacket, sizeof(comparisonPacket));
 
-    memcpy(dataPacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
-    cout << dataPacket.packetType << " " << dataPacket.filename << endl;
-    memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
-
-    // write
-    cout << "write len " <<  outgoingDataPacketSize << endl;
-    sock -> write(outgoingDataPacket, outgoingDataPacketSize);
+    sendAndRetry(sock, filename, outgoingComparisonPacket, incomingFinishPacket, CS_COMPARISON_PACKET_TYPE, FINISH_PACKET_TYPE);
 }
 
 
-// the later version should resend cycle/file instead of packet. here the packet symbols the entire file
-// ------------------------------------------------------
-//
-//                   receiveChecksumPacket
-//
-//  Expect a checksum packet from server. If received, 
-//  compute a checksum for the file and compares it with
-//  that of the server packet and sends the comparison
-//  result to server.
-//     
-// ------------------------------------------------------
-void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
-                           string dirName, int filenastiness,
-                           char outgoingDataPacket[]) {
-    assert(sock != NULL);
-    //
-    // Variable declarations
-    //
-    ssize_t readlen;              // amount of data read from socket
-    char incomingChecksumPacket[CHECKSUM_PACKET_LEN];
-    int numRetried = 0;
-    bool timeout;
-
-    printf("Receiving checksum packet for file %s\n", filename.c_str());
-    assert(CHECKSUM_PACKET_LEN == sizeof(incomingChecksumPacket));
-    readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-    timeout = sock -> timedout();
-
-    cout << "Timeout status is: " << timeout << endl;
-
-    // validate size of received packet
-    if (readlen == 0) {
-        c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
-        timeout = true;
-    }
-
-    // keep resending message up to MAX_RETRIES times when read timedout
-    while (timeout == true && numRetried < MAX_RETRIES) {
-        numRetried++;
-
-        // Send the message to the server
-        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
-        //                 argv[0], outgoingMsg);
-        sock -> write(outgoingDataPacket, DATA_PACKET_LEN);
-        printf("Sent data packet for file %s, retry %d\n", filename.c_str(), numRetried);
-
-        // Read the response from the server
-        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-        readlen = sock -> read(incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-        timeout = sock -> timedout();
-    }
-
-    // throw exception if all retries exceeded
-    if (numRetried == MAX_RETRIES) {
-        throw C150NetworkException("Timed out after 5 retries.");
-    }
-
-    // write flush logic
-
-
-    confirmationPhase(sock, filename, dirName, filenastiness, incomingChecksumPacket, CHECKSUM_PACKET_LEN);
-}
-
-void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
-                        int filenastiness, char incomingChecksumPacket[], 
-                        int incomingChecksumPacketSize) {
-    assert(sock != NULL);
-    
-    int packetType;
-    char outgoingConfirmationPacket[CONFIRMATION_PACKET_LEN];
-    bool comparisonResult;
-
-    // validate packet type
-    packetType = getPacketType(incomingChecksumPacket);
-    if (packetType != CHECKSUM_PACKET_TYPE) { 
-        fprintf(stderr,"Should be receiving checksum packets but packet of packetType %d received.\n", packetType);
-        return; // retry ???
-    }
-    
-    comparisonResult = compareHash(filename, dirName, filenastiness, incomingChecksumPacket);
-    
-    sendConfirmationPacket(sock, (char *) filename.c_str(), dirName, filenastiness, comparisonResult, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
-    printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), 0);
-
-    receiveFinishPacket(sock, filename, outgoingConfirmationPacket, CONFIRMATION_PACKET_LEN);
-}
-
-
-bool compareHash(string filename, string dirName, 
-                 int filenastiness, char incomingChecksumPacket[]) {
+bool compareHash(char filename[], string dirName, 
+                 int filenastiness, char incomingResponsePacket[]) {
     cout << "In compare hash\n";
+
+    // TODO: remove
+    int receivedIncomingType = getPacketType(incomingResponsePacket);
+    if (receivedIncomingType != CS_RESPONSE_PACKET_TYPE) { 
+        fprintf(stderr,"Should be receiving checksum response packet but packet of packetType %s received.\n", packetTypeStringMatch(receivedIncomingType).c_str());
+    }
     
     unsigned char localChecksum[HASH_CODE_LENGTH];
-    ChecksumPacket *checksumPacket = reinterpret_cast<ChecksumPacket *>(incomingChecksumPacket);
+    ChecksumResponsePacket *responsePacket = reinterpret_cast<ChecksumResponsePacket *>(incomingResponsePacket);
 
     // TODO: check if the filename matches with current file
-    if (strcmp((char *) filename.c_str(), checksumPacket->filename) != 0){
-        cout << memcmp((char *) filename.c_str(), checksumPacket->filename, FILENAME_LEN);
-        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename.c_str(), checksumPacket->filename);
+    if (strcmp(filename, responsePacket->filename) != 0){
+        cout << memcmp(filename, responsePacket->filename, FILENAME_LEN);
+        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, responsePacket->filename);
         return 2; // ??
     }
         
@@ -366,104 +352,114 @@ bool compareHash(string filename, string dirName,
 
     // compare checksums
     cout << "Comparing hash\n";
-    if (memcmp(localChecksum, checksumPacket->checksum, HASH_CODE_LENGTH) == 0) {
-        printf("End to end succeeded for file %s", filename.c_str());
+    if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
+        printf("End to end succeeded for file %s\n", filename);
         *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 1 << endl;
         return true;
     } else {
-        printf("End to end failed for file %s", filename.c_str());
+        printf("End to end failed for file %s\n", filename);
         *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 1 << endl;
         return false;
     }
 }
 
+/* ----------------------------UTILITY FUNCTIONS---------------------------- */
 
-void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
-                            string dirName, int filenastiness, 
-                            bool comparisonResult,
-                            char outgoingConfirmationPacket[], 
-                            int outgoingConfirmationPacketSize) {
+// --------------------------------------------------------------------------
+//
+//                           sendAndRetry
+//
+//  Given a packet, send and expect a response. If response is not received,
+//  retry up to five times before aborting on network failure.
+//     
+// --------------------------------------------------------------------------
+void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
+                  char incomingPacket[], int outgoingPacketType, 
+                  int incomingPacketType) {
     assert(sock != NULL);
     assert(filename != NULL);
 
-    // send comparison result
-    // wait for server response
-    ConfirmationPacket confirmationPacket;
-
-    confirmationPacket.comparisonResult = comparisonResult;
-
-    memcpy(confirmationPacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, confirmationPacket.filename) << endl;
-    cout << confirmationPacket.packetType << " " << confirmationPacket.filename << endl;
-    memcpy(outgoingConfirmationPacket, &confirmationPacket, sizeof(confirmationPacket));
-
-    // write
-    cout << "write len " <<  outgoingConfirmationPacket << endl;
-    sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
-}
-
-
-void receiveFinishPacket(C150DgmSocket *sock, string filename, 
-                         char outgoingConfirmationPacket[],
-                         int outgoingConfirmationPacketSize) {
-    assert(sock != NULL);
-    //
-    // Variable declarations
-    //
+    string outgoingType = packetTypeStringMatch(outgoingPacketType);
+    string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
+    int receivedIncomingType;
     ssize_t readlen;              // amount of data read from socket
-    char incomingFinishPacket[FINISH_PACKET_LEN];
     int numRetried = 0;
     bool timeout;
-    int packetType;
+    
+    
+    // send packet
+    sock -> write(outgoingPacket, MAX_PACKET_LEN);
+    printf("Sent %s packet for file %s\n", outgoingType.c_str(), filename);
 
-    printf("Receiving finish packet for file %s\n", filename.c_str());
-    assert(FINISH_PACKET_LEN == sizeof(incomingFinishPacket));
-    readlen = sock -> read(incomingFinishPacket, CHECKSUM_PACKET_LEN);
+    // receive packet
+    printf("Receiving %s packet for file %s\n", expectedIncomingType.c_str(), filename);
+    // assert(CHECKSUM_PACKET_LEN == sizeof(incomingResponsePacket));
+    readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
     timeout = sock -> timedout();
 
-    cout << "Timeout status is: " << timeout << endl;
+    // TODO: put validations into validatePacket();
+    
+    
 
-    // validate size of received packet
-    if (readlen == 0) {
-        c150debug->printf(C150APPLICATION,"Read zero length message, trying again");
-        timeout = true;
+    // retry if validation failed
+    if (!timeout) {
+        // validate size of received packet
+        if (readlen == 0) {
+            fprintf(stderr, "Read zero length message, trying again");
+            timeout = true;
+        }
+
+        // TODO: validate filename?
+
+        // validate packet type
+        receivedIncomingType = getPacketType(incomingPacket);
+        if (receivedIncomingType != incomingPacketType) { 
+            fprintf(stderr,"Should be receiving %s packet but packet of packetType %d received.\n", expectedIncomingType.c_str(), receivedIncomingType);
+            timeout = true;
+
+            // TODO: what exactly should we do? should this count as a retry?
+        }
     }
+    
 
     // keep resending message up to MAX_RETRIES times when read timedout
     while (timeout == true && numRetried < MAX_RETRIES) {
-        numRetried++;
+        // send again
+        sock -> write(outgoingPacket, MAX_PACKET_LEN);
+        printf("Sent %s packet for file %s, retry %d\n", outgoingType.c_str(), filename, numRetried);
 
-        // Send the message to the server`
-        // c150debug->printf(C150APPLICATION,"%s: Writing message: \"%s\"",
-        //                 argv[0], outgoingMsg);
-        sock -> write(outgoingConfirmationPacket, outgoingConfirmationPacketSize);
-        printf("Sent confirmation packet for file %s, retry %d\n", filename.c_str(), numRetried);
-
-        // Read the response from the server
-        // c150debug->printf(C150APPLICATION,"%s: Returned from write, doing read()", argv[0]);
-        readlen = sock -> read(incomingFinishPacket, FINISH_PACKET_LEN);
-        cout << "Reading...\n" << endl;
+        // read again
+        readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
         timeout = sock -> timedout();
 
-        // retry if wrong packet type received
+        // retry if validation failed
         if (!timeout) {
-            packetType = getPacketType(incomingFinishPacket);
-            if (packetType != FINISH_PACKET_TYPE) { 
-                fprintf(stderr,"Should be receiving checksum finish packets but packet of packetType %d received.\n", packetType);
+            // validate size of received packet
+            if (readlen == 0) {
+                fprintf(stderr, "Read zero length message, trying again");
+                timeout = true;
+            }
+
+            // TODO: validate filename?
+
+            // validate packet type
+            receivedIncomingType = getPacketType(incomingPacket);
+            if (receivedIncomingType != incomingPacketType) { 
+                fprintf(stderr,"Should be receiving %s packet but packet of packetType %d received.\n", expectedIncomingType.c_str(), receivedIncomingType);
                 timeout = true;
             }
         }
+
+        numRetried++;
     }
 
     // throw exception if all retries exceeded
     if (numRetried == MAX_RETRIES) {
         throw C150NetworkException("Timed out after 5 retries.");
     }
-
-    printf("Finish packet for file %s received\n", filename.c_str());
-    // write flush logic
-    // HERE!
-    // TODO: if wrong packet type, retry and listen for more?
-    // TODO: write a retry utility function
-    // validate packet type
 }
+
+// void validatePacket() {
+
+// }
+
