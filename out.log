@@ -1,0 +1,48 @@
+Filename is .hi
+Received packet of filename .hi
+Packet type is checksum request
+Checksum request packet received.
+In sendChecksumPacket with filename .hi, directory name TARGET and file nastiness 0
+strcmp 0
+4 .hi
+Original filename is .hi, adjusted temp filename is .hi-TMP
+Before write file to buffer
+In copyFile
+in makeFileName
+Source name: TARGET/.hi-TMP
+in isFile
+Buffer size is 0SHA1 (".hi-TMP") = da39a3ee5e6b4b0d3255bfef95601890afd80709
+Printing calculated checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709
+Printing calculated checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709
+Checksum response package for file .hi sent
+Sent checksum packet for file .hi, retry
+Filename is .hi
+Received packet of filename .hi
+Packet type is checksum request
+Checksum request packet received.
+In sendChecksumPacket with filename .hi, directory name TARGET and file nastiness 0
+strcmp 0
+4 .hi
+Original filename is .hi, adjusted temp filename is .hi-TMP
+Before write file to buffer
+In copyFile
+in makeFileName
+Source name: TARGET/.hi-TMP
+in isFile
+Buffer size is 0SHA1 (".hi-TMP") = da39a3ee5e6b4b0d3255bfef95601890afd80709
+Printing calculated checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709
+Printing calculated checksum: da39a3ee5e6b4b0d3255bfef95601890afd80709
+Checksum response package for file .hi sent
+Sent checksum packet for file .hi, retry
+Filename is .hi
+Received packet of filename .hi
+Packet type is checksum request
+Checksum request packet received.
+In sendChecksumPacket with filename .hi, directory name TARGET and file nastiness 0
+strcmp 0
+4 .hi
+Original filename is .hi, adjusted temp filename is .hi-TMP
+Before write file to buffer
+In copyFile
+in makeFileName
+Source name: TARGET/.hi-TMP

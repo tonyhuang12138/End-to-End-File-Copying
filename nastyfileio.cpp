@@ -123,7 +123,6 @@ bool isDirectory(char *dirname) {
 //     
 // ------------------------------------------------------
 bool isFile(string fname) {
-  cout << "in isFile\n";
   const char *filename = fname.c_str();
   struct stat statbuf;  
   if (lstat(filename, &statbuf) != 0) {
@@ -148,7 +147,6 @@ bool isFile(string fname) {
 // ------------------------------------------------------
 
 string makeFileName(string dir, string name) {
-  cout << "in makeFileName\n";
   stringstream ss;
 
   ss << dir;
@@ -170,7 +168,6 @@ string makeFileName(string dir, string name) {
 
 unsigned char *copyFile(string sourceDir, string fileName, int nastiness, 
                         int *filesize) {
-  cout << "In copyFile\n";
   //
   //  Misc variables, mostly for return codes
   //
@@ -189,7 +186,7 @@ unsigned char *copyFile(string sourceDir, string fileName, int nastiness,
   //
   // make sure the file we're copying is not a directory
   // 
-  cout << "Source name: " << sourceName << endl;
+  printf("Copying %s to buffer\n", fileName.c_str());
   if (!isFile(sourceName)) {
     cerr << "Input file " << sourceName << " is a directory or other non-regular file. Skipping" << endl;
     return NULL;

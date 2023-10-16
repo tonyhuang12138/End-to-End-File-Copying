@@ -32,8 +32,6 @@ using namespace C150NETWORK;
 
 
 void sha1(string filename, string dirName, int nastiness, unsigned char* obuf) {
-	cout << "Before write file to buffer\n";
-
 	int readlen = -1;
 	unsigned char *buffer = copyFile(dirName.c_str(), filename, nastiness, &readlen);
 	if (buffer == NULL or readlen == -1) {
@@ -41,7 +39,7 @@ void sha1(string filename, string dirName, int nastiness, unsigned char* obuf) {
     	return;
 	}
 
-	printf("Buffer size is %d", readlen);
+	printf("Buffer size is %d\n", readlen);
 	printf ("SHA1 (\"%s\") = ", filename.c_str());
 	SHA1(buffer, readlen, obuf);
 

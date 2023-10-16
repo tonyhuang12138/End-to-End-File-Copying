@@ -47,8 +47,8 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-#define MAX_RETRIES 5
-#define MAX_FLUSH_RETRIES 10
+#define MAX_RETRIES 20
+#define MAX_FLUSH_RETRIES 15
 
 // file copy functions
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
@@ -60,30 +60,12 @@ void sendChecksumRequest(C150DgmSocket *sock, char filename[],
 void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
                               string dirName, int filenastiness, 
                               char incomingResponsePacket[]);
-
-// utility functions
+bool compareHash(char filename[], string dirName, 
+                 int filenastiness, char incomingResponsePacket[]);
 void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
                   char incomingPacket[], int outgoingPacketType, 
                   int incomingPacketType);
 
-// void sendDataPacket(C150DgmSocket *sock, char filename[], 
-//                     char outgoingDataPacket[], int outgoingDataPacketSize);
-// void receiveChecksumPacket(C150DgmSocket *sock, string filename, 
-//                            string dirName, int filenastiness,
-//                            char outgoingDataPacket[]);
-// void confirmationPhase(C150DgmSocket *sock, string filename, string dirName,  
-//                         int filenastiness, char incomingResponsePacket[], 
-//                         int incomingResponsePacketSize);
-// void sendConfirmationPacket(C150DgmSocket *sock, char filename[],
-//                             string dirName, int filenastiness, 
-//                             bool comparisonResult,
-//                             char outgoingComparisonPacket[], 
-//                             int outgoingConfirmationPacketSize);
-bool compareHash(char filename[], string dirName, 
-                 int filenastiness, char incomingResponsePacket[]);
-// void receiveFinishPacket(C150DgmSocket *sock, string filename, 
-//                          char outgoingComparisonPacket[],
-//                          int outgoingConfirmationPacketSize);
 
 const int serverArg = 1;                  // server name is 1st arg
 const int networknastinessArg = 2;        // networknastiness is 2nd arg
@@ -381,9 +363,11 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
 
     string outgoingType = packetTypeStringMatch(outgoingPacketType);
     string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
+    char receivedFilename[FILENAME_LEN];
     int receivedIncomingType;
     ssize_t readlen;              // amount of data read from socket
     int numRetried = 0;
+    int numFlushed = 0;
     bool timeout;
     
     
@@ -409,12 +393,20 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
             timeout = true;
         }
 
-        // TODO: validate filename?
+        // validate filename
+        // TODO: abort when filename unseen?
+        getFilename(incomingPacket, receivedFilename);
+        if (strcmp(receivedFilename, filename) != 0) { 
+            fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
+            timeout = true;
+
+            // TODO: what exactly should we do? should this count as a retry?
+        }
 
         // validate packet type
         receivedIncomingType = getPacketType(incomingPacket);
         if (receivedIncomingType != incomingPacketType) { 
-            fprintf(stderr,"Should be receiving %s packet but packet of packetType %d received.\n", expectedIncomingType.c_str(), receivedIncomingType);
+            fprintf(stderr,"Should be receiving %s packet but packet of packetType %s received.\n", expectedIncomingType.c_str(), packetTypeStringMatch(receivedIncomingType).c_str());
             timeout = true;
 
             // TODO: what exactly should we do? should this count as a retry?
@@ -423,7 +415,9 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     
 
     // keep resending message up to MAX_RETRIES times when read timedout
-    while (timeout == true && numRetried < MAX_RETRIES) {
+    while (timeout == true && numRetried < MAX_RETRIES && numFlushed < MAX_FLUSH_RETRIES) {
+        numRetried++;
+
         // send again
         sock -> write(outgoingPacket, MAX_PACKET_LEN);
         printf("Sent %s packet for file %s, retry %d\n", outgoingType.c_str(), filename, numRetried);
@@ -440,17 +434,28 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
                 timeout = true;
             }
 
-            // TODO: validate filename?
+            // validate filename
+            // TODO: abort when filename unseen?
+            getFilename(incomingPacket, receivedFilename);
+            if (strcmp(receivedFilename, filename) != 0) { 
+                fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
+                timeout = true;
+                numRetried--;
+                numFlushed++;
+                // TODO: what exactly should we do? should this count as a retry?
+            }
 
             // validate packet type
             receivedIncomingType = getPacketType(incomingPacket);
             if (receivedIncomingType != incomingPacketType) { 
-                fprintf(stderr,"Should be receiving %s packet but packet of packetType %d received.\n", expectedIncomingType.c_str(), receivedIncomingType);
+                fprintf(stderr,"Should be receiving %s packet but packet of packetType %s received.\n", expectedIncomingType.c_str(), packetTypeStringMatch(receivedIncomingType).c_str());
                 timeout = true;
+                numRetried--;
+                numFlushed++;
+                // TODO: could be potentially very dangerous
+                // TODO: what exactly should we do? should this count as a retry?
             }
         }
-
-        numRetried++;
     }
 
     // throw exception if all retries exceeded

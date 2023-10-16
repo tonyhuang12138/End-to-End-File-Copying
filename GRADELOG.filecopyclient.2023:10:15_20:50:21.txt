@@ -1,0 +1,26 @@
+THIS IS LOG FILE: GRADELOG.filecopyclient.2023:10:15_20:50:21.txt
+Grading log started on 10/15/2023 20:50:21.572163 Command line = [./filecopyclient comp117-02 4 0 SRC]
+File: .hi transmission complete, waiting for end-to-end check, attempt 1
+File: .hi end-to-end check succeeded, attempt 1
+File: data1 transmission complete, waiting for end-to-end check, attempt 1
+File: data1 end-to-end check succeeded, attempt 1
+File: data10 transmission complete, waiting for end-to-end check, attempt 1
+File: data10 end-to-end check succeeded, attempt 1
+File: data100 transmission complete, waiting for end-to-end check, attempt 1
+File: data100 end-to-end check succeeded, attempt 1
+File: data1000 transmission complete, waiting for end-to-end check, attempt 1
+File: data1000 end-to-end check succeeded, attempt 1
+File: data10000 transmission complete, waiting for end-to-end check, attempt 1
+File: data10000 end-to-end check succeeded, attempt 1
+File: independence.txt transmission complete, waiting for end-to-end check, attempt 1
+File: independence.txt end-to-end check succeeded, attempt 1
+File: love.txt transmission complete, waiting for end-to-end check, attempt 1
+File: love.txt end-to-end check succeeded, attempt 1
+File: moor.txt transmission complete, waiting for end-to-end check, attempt 1
+File: moor.txt end-to-end check succeeded, attempt 1
+File: romeo.txt transmission complete, waiting for end-to-end check, attempt 1
+File: romeo.txt end-to-end check succeeded, attempt 1
+File: tyger.txt transmission complete, waiting for end-to-end check, attempt 1
+File: tyger.txt end-to-end check succeeded, attempt 1
+File: warandpeace.txt transmission complete, waiting for end-to-end check, attempt 1
+File: warandpeace.txt end-to-end check succeeded, attempt 1

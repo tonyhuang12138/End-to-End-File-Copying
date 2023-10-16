@@ -49,12 +49,12 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     int filenastiness);
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness);
-void receiveConfirmationPacket(C150DgmSocket *sock, string filename, 
+void receiveConfirmationPacket(C150DgmSocket *sock, char filename[], 
                                string dirName, int filenastiness,
                                char outgoingChecksumPacket[]);
-void renameOrRemove(string filename, string dirName, int filenastiness, 
+void renameOrRemove(char filename[], string dirName, int filenastiness, 
                     char incomingPacket[]);
-void sendFinishPacket(C150DgmSocket *sock, string filename);
+void sendFinishPacket(C150DgmSocket *sock, char filename[]);
 
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
@@ -153,7 +153,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                 sendChecksumPacket(sock, currFilename, dirName, filenastiness);
 
-                printf("Sent checksum packet for file %s, retry %d\n", currFilename, 0);
+                printf("Sent checksum packet for file %s\n", currFilename);
                 break;
 
             case CS_COMPARISON_PACKET_TYPE: 
@@ -228,10 +228,12 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
 
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
+
+    printf("Checksum response package for file %s sent\n", filename);
 }
 
 
-void renameOrRemove(string filename, string dirName, int filenastiness, 
+void renameOrRemove(char filename[], string dirName, int filenastiness, 
                     char incomingPacket[]) {
     cout << "In rename or remove\n";
     
@@ -242,9 +244,9 @@ void renameOrRemove(string filename, string dirName, int filenastiness,
     string tempFullPath = dirName + '/' + tempFilename;
 
     // TODO: check if the filename matches with current file
-    if (strcmp((char *) filename.c_str(), comparisonPacket->filename) != 0){
-        cout << memcmp((char *) filename.c_str(), comparisonPacket->filename, FILENAME_LEN);
-        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename.c_str(), comparisonPacket->filename);
+    if (strcmp((char *) filename, comparisonPacket->filename) != 0){
+        cout << memcmp((char *) filename, comparisonPacket->filename, FILENAME_LEN);
+        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, comparisonPacket->filename);
         return; // ??
     }
 
@@ -275,19 +277,19 @@ void renameOrRemove(string filename, string dirName, int filenastiness,
 }
 
 
-void sendFinishPacket(C150DgmSocket *sock, string filename) {
+void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     assert(sock != NULL);
 
     char outgoingFinishPacket[MAX_PACKET_LEN];
     FinishPacket finishPacket;
 
-    memcpy(finishPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
-    cout << "strcmp " << strcmp(filename.c_str(), finishPacket.filename) << endl;
+    memcpy(finishPacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, finishPacket.filename) << endl;
     cout << finishPacket.packetType << " " << finishPacket.filename << endl;
     memcpy(outgoingFinishPacket, &finishPacket, sizeof(finishPacket));
 
     // write
     cout << "write len " <<  outgoingFinishPacket << endl;
     sock -> write(outgoingFinishPacket, MAX_PACKET_LEN);
-    printf("Sent finish packet for file %s\n", filename.c_str());
+    printf("Sent finish packet for file %s\n", filename);
 }
