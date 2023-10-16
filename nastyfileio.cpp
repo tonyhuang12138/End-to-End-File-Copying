@@ -97,6 +97,27 @@ void getFilename(char incomingPacket[], char filename[]) {
 
 // ------------------------------------------------------
 //
+//                   getFileSize
+//
+//  Given name and directory for a file, return its size
+//     
+// ------------------------------------------------------
+size_t getFileSize(string filename, string dirName) {
+    struct stat statbuf;
+    string sourceName = makeFileName(dirName, filename);
+
+    // reead whole input file and find its size
+    if (lstat(sourceName.c_str(), &statbuf) != 0) {
+      fprintf(stderr,"copyFile: Error stating supplied source file %s\n", sourceName.c_str());
+     exit(20);
+    }
+
+    return statbuf.st_size;
+}
+
+
+// ------------------------------------------------------
+//
 //                   isDirectory
 //
 //  Check if the supplied file name is a directory

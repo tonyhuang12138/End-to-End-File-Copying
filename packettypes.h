@@ -10,17 +10,11 @@
 #define CS_COMPARISON_PACKET_TYPE 5
 #define FINISH_PACKET_TYPE 6
 
-#define PACKET_TYPE_OFFSET 0
-#define PACKET_TYPE_LEN 4
-
 #define MAX_PACKET_LEN 512
-// #define DATA_PACKET_LEN 512
-// #define CS_REQUEST_PACKET_LEN 54
-// #define CHUNK_CHECK_PACKET_LEN 2
-// #define CS_RESPONSE_PACKET_LEN 74
-// #define CS_COMPARISON_PACKET_LEN 55
-
+#define PACKET_TYPE_LEN 4
 #define FILENAME_LEN 50
+#define DATA_LEN 450 // 512 - 4 - 50 - 4 - 4
+
 #define CHUNK_SIZE 8
 
 // client to server
@@ -30,7 +24,7 @@ struct DataPacket {
     char filename[FILENAME_LEN]; 
     int numTotalPackets;
     int packetNumber;
-    // char data[412];
+    char data[DATA_LEN];
 };
 
 // server to client

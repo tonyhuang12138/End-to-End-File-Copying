@@ -4,6 +4,7 @@
 int getPacketType(char incomingPacket[]);
 string packetTypeStringMatch(int packetType);
 void getFilename(char incomingPacket[], char filename[]);
+size_t getFileSize(string filename, string dirName);
 bool isDirectory(char *dirname);
 unsigned char *copyFile(string sourceDir, string fileName, int nastiness, 
                         int *filesize);

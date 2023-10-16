@@ -24,6 +24,8 @@
 //       how-do-i-get-a-list-of-files-in-a-directory-in-c
 //     - https://stackoverflow.com/questions/4553012/
 //       checking-if-a-file-is-a-directory-or-just-a-file
+//     - https://stackoverflow.com/questions/2745074/
+//       fast-ceiling-of-an-integer-division-in-c-c
 //
 
 
@@ -40,6 +42,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include <vector>
 #include "sha1.h"
 #include "nastyfileio.h"
 // #include <string.h>
@@ -48,11 +51,17 @@ using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
 #define MAX_RETRIES 20
+#define MAX_CHUNK_RETRIES 20
 #define MAX_FLUSH_RETRIES 15
 
 // file copy functions
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
+size_t getTotalChunks(string filename, string dirName);
+void freeChunk(vector<char *> chunk);
+char *generateDataPacket(string filename, string dirName, int filenastiness
+                         size_t currChunkNum, int currPacketNum);
+
 
 // end to end functions
 void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
@@ -115,13 +124,12 @@ int main(int argc, char *argv[]) {
                 continue; 
             }
             
-            // copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
+            copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
 
-            // end to end functions
-            (void) filenastiness;
-            char incomingResponsePacket[MAX_PACKET_LEN];
-            sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
-            sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
+            // end to end
+            // char incomingResponsePacket[MAX_PACKET_LEN];
+            // sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
+            // sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
         }
 
         closedir(SRC);
@@ -142,60 +150,6 @@ int main(int argc, char *argv[]) {
 }
 
 
-// void listen(C150DgmSocket *sock, string filename, string dirName,  
-//               int filenastiness) {
-//     assert(sock != NULL);
-
-//     char incomingPacket[MAX_PACKET_LEN];
-//     int expectedPacketType = CHUNK_CHECK_PACKET_TYPE;
-//     int numRetried = 0;
-//     int numFlushed = 0;
-//     int packetType;
-//     int numTotalChunks = 0;
-//     int currChunkNum = 0;
-//     bool timeout;
-//     bool flush;
-
-//     while (timeout && numRetried < MAX_RETRIES) {
-//         // phase 1: send data and check bytemap
-
-//         // calculate number of chunks in file
-//         numTotalChunks = getTotalChunks(filename, dirName);
-//         // keep sending while there are more chunks left
-//         while (currChunkNum < numTotalChunks) {
-//             chunk = getChunk(filename, dirName, currChunkNum);
-//             sendChunk(sock, chunk);
-//             flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // flush if wrong packet type
-
-//             while (flush && numFlushed < MAX_FLUSH_RETRIES) {
-//                 flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // flush if wrong packet type
-//                 fprintf(stderr, "Received packet of wrong type %d times, exiting.", MAX_FLUSH_RETRIES);
-//             }
-//             // numFlushed = 0;
-
-//             // keep sending chunks until full chunk is successfully delivered
-//             while (sizeof(failedPackets) != 0) {
-//                 // check packet type here
-//                 flush = readChunkCheck(sock, failedPackets, &timeout, &numRetried); // calls sock -> read
-
-//                 // declare network failure
-//                 if (timeout == false || numRetried == MAX_RETRIES) {
-//                     // print network failure log
-//                     return;
-//                 }
-//             }
-
-//             flush = false;
-//             currChunkNum++;
-//         }
-
-//         expectedPacketType = CHECKSUM_PACKET_TYPE;
-
-//         numRetried++;
-//     }
-// }
-
-
 // void sendChunk() {
 //     // load chunk with packets
 // }
@@ -207,23 +161,122 @@ int main(int argc, char *argv[]) {
 //  Given a filename, copy it to server
 //     
 // ------------------------------------------------------
-// void copyFile(C150DgmSocket *sock, string filename, string dirName,  
-//               int filenastiness) {
-//     char outgoingDataPacket[MAX_PACKET_LEN]; // TODO: null terminate this?
+void copyFile(C150DgmSocket *sock, string filename, string dirName,  
+              int filenastiness) {
+    // Start sending
+    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
-//     // Start sending
-//     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
+    char incomingCheckPacket[MAX_PACKET_LEN];
+    size_t numTotalChunks;
+    size_t currChunkNum = 0;
+    int numRetried = 0;
 
-//     // send chunk logic
-//     // sendFile();
+    // calculate number of chunks in file
+    numTotalChunks = getTotalChunks(filename, dirName);
+    (void) numTotalChunks;
+    // keep sending while there are more chunks left
+    // while (currChunkNum < numTotalChunks) {
+    //     chunk = getChunk(filename, dirName, currChunkNum);
+    //     sendAndRetry(sock, filename, chunk, incomingCheckPacket, DATA_PACKET_TYPE, CHUNK_CHECK_PACKET_TYPE, true);
+    //     readChunkCheck(incomingCheckPacket);
 
-//     generateDataPacket(sock, (char *) filename.c_str(), outgoingDataPacket);
-//     printf("Sent data packet for file %s, retry %d\n", filename.c_str(), 0);
+    //     // keep sending chunks until full chunk is successfully delivered
+    //     while (sizeof(failedPackets) != 0 && numRetried < MAX_CHUNK_RETRIES) {
+    //         readChunkCheck(incomingCheckPacket);
+    //         numRetried++;
+    //     }
 
-    
+    //     currChunkNum++;
+    // }
+
+    printf("%s copied to server.\n", filename.c_str());
+}
 
 
-// }
+// ------------------------------------------------------
+//
+//                   getTotalChunks
+//
+//  Given a filename and a directory name, find how many 
+//  chunks of 8 are in it
+//     
+// ------------------------------------------------------
+size_t getTotalChunks(string filename, string dirName) {
+    size_t fileSize = getFileSize(filename, dirName);
+    // see references up top
+    size_t numTotalChunks = (fileSize + CHUNK_SIZE - 1) / CHUNK_SIZE; 
+
+    printf("%s: total size is %ld and number of chunks is %ld\n", filename.c_str(), fileSize, numTotalChunks);
+
+    return numTotalChunks;
+}
+
+
+vector<char *> getChunk(string filename, string dirName, size_t currChunkNum) {
+    vector<string> chunk;
+
+    // load up chunk with data packets
+    for (int i = 0; i < CHUNK_SIZE; i++) {
+        char *dataPacket = generateDataPacket(filename, dirName, currChunkNum, i);
+        chunk.push_back(dataPacket);
+    }
+
+    return chunk;
+}
+
+void freeChunk(vector<char *> chunk) {
+    for (char *dataPacket : chunk) {
+        free(dataPacket);
+    }
+}
+
+
+char *generateDataPacket(string filename, string dirName, int filenastiness
+                         size_t currChunkNum, int currPacketNum) {
+    char dataPacket[MAX_PACKET_LEN];
+    string sourceName = makeFileName(dirName, fileName);
+    size_t fileSize = getFileSize(filename, dirName);
+    void *fopenretval;
+    size_t offset;
+    unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
+    NASTYFILE inputFile(nastiness);
+    DataPacket dataPacket;
+
+    // open file
+    offset = (currChunkNum * CHUNK_SIZE + currPacketNum) * DATA_LEN
+    inputFile.fseek(offset, SEEK_SET);
+
+    fopenretval = inputFile.fopen(sourceName.c_str(), "rb");
+    if (fopenretval == NULL) {
+      cerr << "Error opening input file " << sourceName << 
+        " errno=" << strerror(errno) << endl;
+      exit(12);
+    }
+
+
+    // read DATA_LEN bytes of data
+    readAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+    len = inputFile.fread(buffer, 1, readAmount);
+    if (len != readAmount) {
+      cerr << "Error reading file " << sourceName << 
+        "  errno=" << strerror(errno) << endl;
+      exit(16);
+    }
+
+    if (inputFile.fclose() != 0 ) {
+      cerr << "Error closing input file " << sourceName << 
+        " errno=" << strerror(errno) << endl;
+      exit(16);
+    }
+
+
+    // compare with file size
+    // TODO: compare cache with disk?
+
+    return dataPacket;
+}
+
+
 
 /* --------------------------END TO END FUNCTIONS--------------------------- */
 
@@ -259,37 +312,6 @@ void sendChecksumRequest(C150DgmSocket *sock, char filename[],
 }
 
 
-// ------------------------------------------------------
-//
-//                   generateDataPacket
-//
-//  Given a filename, send the parts of the data as a packet 
-//  to the server and write to outgoingDataPacket
-//     
-// ------------------------------------------------------
-// void generateDataPacket(C150DgmSocket *sock, char filename[], 
-//                     char outgoingDataPacket[]) {
-//     // maybe remove it in final submission?
-//     assert(sock != NULL);
-//     assert(filename != NULL);
-
-//     DataPacket dataPacket;
-
-//     // TODO: hardcoding only for the end to end submission, change later
-//     dataPacket.numTotalPackets = 1;
-//     dataPacket.packetNumber = 1;
-
-//     memcpy(dataPacket.filename, filename, strlen(filename) + 1);
-//     cout << "strcmp " << strcmp(filename, dataPacket.filename) << endl;
-//     cout << dataPacket.packetType << " " << dataPacket.filename << endl;
-//     memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
-
-//     // write
-//     // cout << "write len " <<  outgoingDataPacketSize << endl;
-//     // sock -> write(outgoingDataPacket, outgoingDataPacketSize);
-// }
-
-
 void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
                               string dirName, int filenastiness, 
                               char incomingResponsePacket[]) {
@@ -311,6 +333,14 @@ void sendChecksumConfirmation(C150DgmSocket *sock, char filename[],
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                                compareHash
+//
+//  Given an incoming checksum response packet, compare its value with locally
+//  computed checksum
+//     
+// --------------------------------------------------------------------------
 bool compareHash(char filename[], string dirName, 
                  int filenastiness, char incomingResponsePacket[]) {
     cout << "In compare hash\n";
