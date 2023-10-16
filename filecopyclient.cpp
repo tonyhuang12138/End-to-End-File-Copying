@@ -65,6 +65,9 @@ bool compareHash(char filename[], string dirName,
 void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
                   char incomingPacket[], int outgoingPacketType, 
                   int incomingPacketType);
+void validatePacket(char incomingPacket[], int incomingPacketType, 
+                    char filename[], int readlen, bool *timeout, 
+                    int *numRetried, int *numFlushed, bool retryFlag);
 
 
 const int serverArg = 1;                  // server name is 1st arg
@@ -313,9 +316,9 @@ bool compareHash(char filename[], string dirName,
     cout << "In compare hash\n";
 
     // TODO: remove
-    int receivedIncomingType = getPacketType(incomingResponsePacket);
-    if (receivedIncomingType != CS_RESPONSE_PACKET_TYPE) { 
-        fprintf(stderr,"Should be receiving checksum response packet but packet of packetType %s received.\n", packetTypeStringMatch(receivedIncomingType).c_str());
+    int receivedPacketType = getPacketType(incomingResponsePacket);
+    if (receivedPacketType != CS_RESPONSE_PACKET_TYPE) { 
+        fprintf(stderr,"Should be receiving checksum response packet but packet of packetType %s received.\n", packetTypeStringMatch(receivedPacketType).c_str());
     }
     
     unsigned char localChecksum[HASH_CODE_LENGTH];
@@ -364,12 +367,10 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     string outgoingType = packetTypeStringMatch(outgoingPacketType);
     string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
     char receivedFilename[FILENAME_LEN];
-    int receivedIncomingType;
     ssize_t readlen;              // amount of data read from socket
     int numRetried = 0;
     int numFlushed = 0;
     bool timeout;
-    
     
     // send packet
     sock -> write(outgoingPacket, MAX_PACKET_LEN);
@@ -381,39 +382,9 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
     timeout = sock -> timedout();
 
-    // TODO: put validations into validatePacket();
-    
-    
-
     // retry if validation failed
-    if (!timeout) {
-        // validate size of received packet
-        if (readlen == 0) {
-            fprintf(stderr, "Read zero length message, trying again");
-            timeout = true;
-        }
-
-        // validate filename
-        // TODO: abort when filename unseen?
-        getFilename(incomingPacket, receivedFilename);
-        if (strcmp(receivedFilename, filename) != 0) { 
-            fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
-            timeout = true;
-
-            // TODO: what exactly should we do? should this count as a retry?
-        }
-
-        // validate packet type
-        receivedIncomingType = getPacketType(incomingPacket);
-        if (receivedIncomingType != incomingPacketType) { 
-            fprintf(stderr,"Should be receiving %s packet but packet of packetType %s received.\n", expectedIncomingType.c_str(), packetTypeStringMatch(receivedIncomingType).c_str());
-            timeout = true;
-
-            // TODO: what exactly should we do? should this count as a retry?
-        }
-    }
+    if (!timeout) validatePacket(incomingPacket, incomingPacketType, filename, readlen, &timeout, &numRetried, &numFlushed, false);
     
-
     // keep resending message up to MAX_RETRIES times when read timedout
     while (timeout == true && numRetried < MAX_RETRIES && numFlushed < MAX_FLUSH_RETRIES) {
         numRetried++;
@@ -427,44 +398,55 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
         timeout = sock -> timedout();
 
         // retry if validation failed
-        if (!timeout) {
-            // validate size of received packet
-            if (readlen == 0) {
-                fprintf(stderr, "Read zero length message, trying again");
-                timeout = true;
-            }
-
-            // validate filename
-            // TODO: abort when filename unseen?
-            getFilename(incomingPacket, receivedFilename);
-            if (strcmp(receivedFilename, filename) != 0) { 
-                fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
-                timeout = true;
-                numRetried--;
-                numFlushed++;
-                // TODO: what exactly should we do? should this count as a retry?
-            }
-
-            // validate packet type
-            receivedIncomingType = getPacketType(incomingPacket);
-            if (receivedIncomingType != incomingPacketType) { 
-                fprintf(stderr,"Should be receiving %s packet but packet of packetType %s received.\n", expectedIncomingType.c_str(), packetTypeStringMatch(receivedIncomingType).c_str());
-                timeout = true;
-                numRetried--;
-                numFlushed++;
-                // TODO: could be potentially very dangerous
-                // TODO: what exactly should we do? should this count as a retry?
-            }
-        }
+        if (!timeout) validatePacket(incomingPacket, incomingPacketType, filename, readlen, &timeout, &numRetried, &numFlushed, true);
     }
 
     // throw exception if all retries exceeded
-    if (numRetried == MAX_RETRIES) {
-        throw C150NetworkException("Timed out after 5 retries.");
-    }
+    if (numRetried == MAX_RETRIES) throw C150NetworkException("Timed out after 5 retries.");
 }
 
-// void validatePacket() {
+// --------------------------------------------------------------------------
+//
+//                           validatePacket
+//
+//  Given an incoming packet, validate that it is not empty, is of the correct
+//  file and has the correct packet type
+//     
+// --------------------------------------------------------------------------
+void validatePacket(char incomingPacket[], int incomingPacketType, 
+                    char filename[], int readlen, bool *timeout, 
+                    int *numRetried, int *numFlushed, bool retryFlag) {
+    char receivedFilename[FILENAME_LEN];
+    int receivedPacketType;   
+    string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
 
-// }
+    // validate size of received packet
+    if (readlen == 0) {
+        fprintf(stderr, "Read zero length message, trying again");
+        *timeout = true;
+    }
+
+    // validate filename
+    // TODO: abort when filename unseen?
+    getFilename(incomingPacket, receivedFilename);
+    if (strcmp(receivedFilename, filename) != 0) { 
+        fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
+        *timeout = true;
+        if (retryFlag) {
+            *numRetried -= 1;
+            *numFlushed += 1;
+        }
+    }
+
+    // validate packet type
+    receivedPacketType = getPacketType(incomingPacket);
+    if (receivedPacketType != incomingPacketType) { 
+        fprintf(stderr,"Should be receiving %s packet but packet of packetType %s received.\n", expectedIncomingType.c_str(), packetTypeStringMatch(receivedPacketType).c_str());
+        *timeout = true;
+        if (retryFlag) {
+            *numRetried -= 1;
+            *numFlushed += 1;
+        }
+    }
+}
 
