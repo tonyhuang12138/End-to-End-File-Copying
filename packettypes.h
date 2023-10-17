@@ -13,7 +13,7 @@
 #define MAX_PACKET_LEN 512
 #define PACKET_TYPE_LEN 4
 #define FILENAME_LEN 50
-#define DATA_LEN 450 // 512 - 4 - 50 - 4 - 4
+#define DATA_LEN 438 // 512 - 4 - 50 - 8 - 8 - 4
 
 #define CHUNK_SIZE 8
 
@@ -22,9 +22,10 @@ struct DataPacket {
     const int packetType = 1;
     // investigate safety hazard: when buffer size is 1 it still worked; why didn't it overflow?
     char filename[FILENAME_LEN]; 
-    int numTotalPackets;
+    size_t numTotalPackets;
+    size_t chunkNumber;
     int packetNumber;
-    char data[DATA_LEN];
+    unsigned char data[DATA_LEN];
 };
 
 // server to client
