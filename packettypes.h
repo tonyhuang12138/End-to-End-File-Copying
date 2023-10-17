@@ -34,6 +34,7 @@ struct ChunkCheckRequestPacket {
     const int packetType = 2;
     char filename[FILENAME_LEN]; 
     int chunkNumber;
+    int numPacketsInChunk;
 };
 
 // server to client
@@ -41,7 +42,8 @@ struct ChunkCheckResponsePacket {
     const int packetType = 3;
     char filename[FILENAME_LEN]; 
     int chunkNumber;
-    char chunkCheck[CHUNK_SIZE];
+    int numPacketsInChunk; // only check numPacketsInChunk packets
+    char chunkCheck[CHUNK_SIZE]; 
 };
 
 // client to server

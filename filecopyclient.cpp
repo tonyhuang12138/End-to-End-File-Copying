@@ -268,6 +268,7 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
 
     // request for chunk check
     requestPacket.chunkNumber = currChunkNum;
+    requestPacket.numPacketsInChunk = numPacketsInChunk;
     memcpy(requestPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
     
@@ -356,8 +357,25 @@ void sendDataPacket(C150DgmSocket *sock, string filename, string dirName,
 //     sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
 // }
 
-void resendFailedPackets() {
+void resendFailedPackets(C150DgmSocket *sock, char filename[], char incomingResponsePacket[]) {
     ChunkCheckResponsePacket *responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingResponsePacket);
+
+    // assuming that chunkCheck is formed correctly
+    vector<int> failedPackets;
+    for (int i = 0; i < responsePacket->numPacketsInChunk; i++) {
+        if (responsePacket->numPacketsInChunk[i] == false) {
+            failedPackets.push_back(i);
+        }
+    }
+
+    // TODO: optimization - read from memory instead of disk
+
+    // resend all failed packets
+    if (failedPackets.size() > 0) {
+        for (int v : failedPackets) {
+            sendDataPacket(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, v);
+        }
+    }
 
     // if responsePacket->bytemap not all 1 -> recalculate corresponding packets and resend
     // for all i in failedPackets, sendDataPacket()
