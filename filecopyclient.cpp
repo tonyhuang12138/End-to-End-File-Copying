@@ -59,10 +59,9 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
 size_t getTotalPackets(string filename, string dirName);
-unsigned char *generateDataPacket(string filename, string dirName, 
+unsigned char *sendDataPacket(string filename, string dirName, 
                                   int filenastiness, size_t numTotalPackets, 
-                                  size_t currChunkNum, int currPacketNum, 
-                                  unsigned char *outgoingDataPacket);
+                                  size_t currChunkNum, int currPacketNum) ;
 
 
 // end to end functions
@@ -169,10 +168,9 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     char incomingCheckPacket[MAX_PACKET_LEN];
-    unsigned char outgoingDataPacket[MAX_PACKET_LEN];
+    unsigned char *outgoingDataPacket;
     size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
-    unsigned char *buffer;
 
     // calculate number of chunks and packets in file
     fileSize = getFileSize(filename, dirName);
@@ -183,40 +181,42 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
 
     // TODO: remove. testing chunk read with local file write
     unsigned char *file = (unsigned char *) malloc(fileSize+1);
-    
+    vector<unsigned char *> chunk;
     // keep sending while there are more chunks left
     while (currChunkNum < numTotalChunks) {
         printf("Getting chunk %ld\n", currChunkNum);
         if (currChunkNum == numTotalChunks - 1) {
             printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
             for (int i = 0; i < numPacketsInLastChunk; i++) {
-                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
-
-
-                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
-                printf("Verifying packet type: %d\n", dp->packetType);
-                printf("Offset is %ld\n", currChunkNum * CHUNK_SIZE + i);
-                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
-                printf("Offset: %ld and write amount: %ld", offset, fileSize - offset);
-                memcpy(file + offset, dp->data, fileSize - offset);
-
-                free(buffer);
+                outgoingDataPacket = sendDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i);
+                chunk.push_back(outgoingDataPacket);
             }
         } else {
             for (int i = 0; i < CHUNK_SIZE; i++) {
-                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
-
-                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
-                printf("Verifying packet type: %d\n", dp->packetType);
-                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
-                printf("Offset is %ld\n", offset);
-                memcpy(file + offset, dp->data, DATA_LEN);
-                
-                free(buffer);
+                outgoingDataPacket = sendDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i);
+                chunk.push_back(outgoingDataPacket);
             }
         }
+
+
+        for (size_t i = 0; i < chunk.size(); i++) {
+            printf("Chunk size is %ld\n", chunk.size());
+            DataPacket *dp = reinterpret_cast<DataPacket *>(chunk[i]);
+            printf("Unpacking packet %s, %ld, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->chunkNumber, dp->packetNumber);
+            printf("Verifying packet type: %d\n", dp->packetType);
+            printf("Offset is %ld\n", currChunkNum * CHUNK_SIZE + i);
+            size_t offset = (dp->chunkNumber * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
+            size_t packetSize = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+
+            printf("Offset: %ld and write amount: %ld\n", offset, packetSize);
+            memcpy(file + offset, dp->data, packetSize);
+        }
+
+
+        for (auto dataPacket : chunk) {
+            free(dataPacket);
+        }
+        chunk.clear();
 
         // sendAndRetry(sock, filename, chunk, incomingCheckPacket, DATA_PACKET_TYPE, CHUNK_CHECK_PACKET_TYPE, true);
         // readChunkCheck(incomingCheckPacket);
@@ -259,10 +259,10 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
 }
 
 
-unsigned char *generateDataPacket(string filename, string dirName, 
+unsigned char *sendDataPacket(string filename, string dirName, 
                                   int filenastiness, size_t numTotalPackets, 
-                                  size_t currChunkNum, int currPacketNum, 
-                                  unsigned char *outgoingDataPacket) {
+                                  size_t currChunkNum, int currPacketNum) {
+    unsigned char *outgoingDataPacket = (unsigned char *) malloc(sizeof(DataPacket));
     unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
 
     string sourceName = makeFileName(dirName, filename);
@@ -321,7 +321,9 @@ unsigned char *generateDataPacket(string filename, string dirName,
     printf("Unpacking packet %s, %ld, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->numTotalPackets, dataPacket2->packetNumber);
     printf("Verifying packet type: %d\n", dataPacket2->packetType);
 
-    return buffer;
+    free(buffer);
+
+    return outgoingDataPacket;
 }
 
 
