@@ -59,10 +59,12 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
 size_t getTotalPackets(string filename, string dirName);
-unsigned char *generateDataPacket(string filename, string dirName, 
-                                  int filenastiness, size_t numTotalPackets, 
-                                  size_t currChunkNum, int currPacketNum, 
-                                  unsigned char *outgoingDataPacket);
+void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
+               int filenastiness, size_t numTotalPackets, size_t currChunkNum, 
+               int numPacketsInChunk);
+void sendDataPacket(C150DgmSocket *sock, string filename, string dirName, 
+                    int filenastiness, size_t numTotalPackets, 
+                    size_t currChunkNum, int currPacketNum);
 
 
 // end to end functions
@@ -169,10 +171,8 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     char incomingCheckPacket[MAX_PACKET_LEN];
-    unsigned char outgoingDataPacket[MAX_PACKET_LEN];
     size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
-    unsigned char *buffer;
 
     // calculate number of chunks and packets in file
     fileSize = getFileSize(filename, dirName);
@@ -182,41 +182,32 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     printf("%s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
 
     // TODO: remove. testing chunk read with local file write
-    unsigned char *file = (unsigned char *) malloc(fileSize+1);
+    // unsigned char *file = (unsigned char *) malloc(fileSize+1);
     
     // keep sending while there are more chunks left
     while (currChunkNum < numTotalChunks) {
         printf("Getting chunk %ld\n", currChunkNum);
         if (currChunkNum == numTotalChunks - 1) {
             printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
-            for (int i = 0; i < numPacketsInLastChunk; i++) {
-                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
-
-
-                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
-                printf("Verifying packet type: %d\n", dp->packetType);
-                printf("Offset is %ld\n", currChunkNum * CHUNK_SIZE + i);
-                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
-                printf("Offset: %ld and write amount: %ld", offset, fileSize - offset);
-                memcpy(file + offset, dp->data, fileSize - offset);
-
-                free(buffer);
-            }
+            // extract data from file and send to server as packets
+            sendChunk(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, numPacketsInLastChunk);
+            
         } else {
-            for (int i = 0; i < CHUNK_SIZE; i++) {
-                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
-
-                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
-                printf("Verifying packet type: %d\n", dp->packetType);
-                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
-                printf("Offset is %ld\n", offset);
-                memcpy(file + offset, dp->data, DATA_LEN);
-                
-                free(buffer);
-            }
+            sendChunk(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, CHUNK_SIZE);
         }
+
+        // for (size_t i = 0; i < chunk.size(); i++) {
+        //     printf("Chunk size is %ld\n", chunk.size());
+        //     DataPacket *dp = reinterpret_cast<DataPacket *>(chunk[i]);
+        //     printf("Unpacking packet %s, %ld, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->chunkNumber, dp->packetNumber);
+        //     printf("Verifying packet type: %d\n", dp->packetType);
+        //     printf("Offset is %ld\n", currChunkNum * CHUNK_SIZE + i);
+        //     size_t offset = (dp->chunkNumber * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
+        //     size_t packetSize = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+
+        //     printf("Offset: %ld and write amount: %ld\n", offset, packetSize);
+        //     memcpy(file + offset, dp->data, packetSize);
+        // }
 
         // sendAndRetry(sock, filename, chunk, incomingCheckPacket, DATA_PACKET_TYPE, CHUNK_CHECK_PACKET_TYPE, true);
         // readChunkCheck(incomingCheckPacket);
@@ -230,39 +221,68 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
         currChunkNum++;
     }
 
-    // TODO: remove. write buffer to file
-    NASTYFILE outputFile(filenastiness);
-    string outputpath = "./write_output/" + filename;
-    void *fopenretval2 = outputFile.fopen(outputpath.c_str(), "wb");  
-    //
-    // Write the whole file
-    //
-    size_t len = outputFile.fwrite(file, 1, fileSize);
-    if (len != fileSize) {
-      cerr << "Error writing file " << outputpath.c_str() << 
-	      "  errno=" << strerror(errno) << endl;
-      exit(16);
-    }
+    // // TODO: remove. write buffer to file
+    // NASTYFILE outputFile(filenastiness);
+    // string outputpath = "./write_output/" + filename;
+    // void *fopenretval2 = outputFile.fopen(outputpath.c_str(), "wb");  
+    // //
+    // // Write the whole file
+    // //
+    // size_t len = outputFile.fwrite(file, 1, fileSize);
+    // if (len != fileSize) {
+    //   cerr << "Error writing file " << outputpath.c_str() << 
+	//       "  errno=" << strerror(errno) << endl;
+    //   exit(16);
+    // }
   
-    if (outputFile.fclose() == 0 ) {
-       cout << "Finished writing file " << outputpath.c_str() <<endl;
-    } else {
-      cerr << "Error closing output file " << outputpath.c_str() << 
-	      " errno=" << strerror(errno) << endl;
-      exit(16);
-    }
+    // if (outputFile.fclose() == 0 ) {
+    //    cout << "Finished writing file " << outputpath.c_str() <<endl;
+    // } else {
+    //   cerr << "Error closing output file " << outputpath.c_str() << 
+	//       " errno=" << strerror(errno) << endl;
+    //   exit(16);
+    // }
 
-    printf("About to free file\n");
-    free(file);
+    // printf("About to free file\n");
+    // free(file);
 
     printf("%s copied to server.\n", filename.c_str());
 }
 
 
-unsigned char *generateDataPacket(string filename, string dirName, 
-                                  int filenastiness, size_t numTotalPackets, 
-                                  size_t currChunkNum, int currPacketNum, 
-                                  unsigned char *outgoingDataPacket) {
+void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
+               int filenastiness, size_t numTotalPackets, size_t currChunkNum, 
+               int numPacketsInChunk) {
+    assert(sock != NULL);
+
+    // send chunk to server
+    for (int i = 0; i < numPacketsInChunk; i++) {
+        sendDataPacket(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, i);
+    }
+
+    // sendChunkCheckRequest(sock, filename, );
+
+    ChunkCheckRequestPacket requestPacket;
+    char incomingResponsePacket[MAX_PACKET_LEN];
+    char outgoingRequestPacket[MAX_PACKET_LEN];
+
+    // request for chunk check
+    requestPacket.chunkNumber = currChunkNum;
+    memcpy(requestPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
+    memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
+    
+    sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
+
+    // chunk check response received, start check bytemap and resend failed packets until all succeed
+    resendFailedPackets(sock, );
+    sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
+}
+
+
+void sendDataPacket(C150DgmSocket *sock, string filename, string dirName, 
+                    int filenastiness, size_t numTotalPackets, 
+                    size_t currChunkNum, int currPacketNum) {
+    char outgoingDataPacket[MAX_PACKET_LEN];
     unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
 
     string sourceName = makeFileName(dirName, filename);
@@ -315,16 +335,33 @@ unsigned char *generateDataPacket(string filename, string dirName,
     memcpy(dataPacket.data, buffer, DATA_LEN); // TODO: +1?
     memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
 
-    // TODO: remove:
-    DataPacket *dataPacket2 = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-    printf("Double checking within data generation: ");
-    printf("Unpacking packet %s, %ld, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->numTotalPackets, dataPacket2->packetNumber);
-    printf("Verifying packet type: %d\n", dataPacket2->packetType);
-
-    return buffer;
+    sock -> write(outgoingDataPacket, MAX_PACKET_LEN);
+    free(buffer);
 }
 
 
+// void sendChunkCheckRequest(C150DgmSocket *sock, char filename[], 
+//                            int currChunkNum) {
+//     assert(sock != NULL);
+//     assert(filename != NULL);
+
+//     ChunkCheckRequestPacket requestPacket;
+//     char incomingResponsePacket[MAX_PACKET_LEN];
+
+//     // request for chunk check
+//     requestPacket.chunkNumber = currChunkNum;
+//     memcpy(requestPacket.filename, filename, strlen(filename) + 1);
+//     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
+    
+//     sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
+// }
+
+void resendFailedPackets() {
+    ChunkCheckResponsePacket *responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingResponsePacket);
+
+    // if responsePacket->bytemap not all 1 -> recalculate corresponding packets and resend
+    // for all i in failedPackets, sendDataPacket()
+}
 
 /* --------------------------END TO END FUNCTIONS--------------------------- */
 
