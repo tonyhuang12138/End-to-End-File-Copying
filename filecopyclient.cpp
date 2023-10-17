@@ -62,10 +62,12 @@ size_t getTotalPackets(string filename, string dirName);
 void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
                int filenastiness, size_t numTotalPackets, size_t currChunkNum, 
                int numPacketsInChunk);
-void sendDataPacket(C150DgmSocket *sock, string filename, string dirName, 
-                    int filenastiness, size_t numTotalPackets, 
-                    size_t currChunkNum, int currPacketNum);
-
+char *sendDataPacket(C150DgmSocket *sock, string filename, 
+                              string dirName, int filenastiness, 
+                              size_t numTotalPackets, size_t currChunkNum, 
+                              int currPacketNum);
+void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[], 
+                         vector<char *> chunk);
 
 // end to end functions
 void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
@@ -254,17 +256,22 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
                int filenastiness, size_t numTotalPackets, size_t currChunkNum, 
                int numPacketsInChunk) {
     assert(sock != NULL);
+    char *outgoingDataPacket;
+    vector<char *> chunk;
 
     // send chunk to server
     for (int i = 0; i < numPacketsInChunk; i++) {
-        sendDataPacket(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, i);
+        // TODO: check address
+        outgoingDataPacket = sendDataPacket(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, i);
+        cout << "Address is :" << (void*) outgoingDataPacket << endl;
+        chunk.push_back(outgoingDataPacket);
     }
 
     // sendChunkCheckRequest(sock, filename, );
 
-    ChunkCheckRequestPacket requestPacket;
     char incomingResponsePacket[MAX_PACKET_LEN];
     char outgoingRequestPacket[MAX_PACKET_LEN];
+    ChunkCheckRequestPacket requestPacket;
 
     // request for chunk check
     requestPacket.chunkNumber = currChunkNum;
@@ -272,18 +279,27 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
     memcpy(requestPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
     
+    // send chunk check request
     sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
 
     // chunk check response received, start check bytemap and resend failed packets until all succeed
-    resendFailedPackets(sock, );
+
+    resendFailedPackets(sock, incomingResponsePacket, chunk);
+    // send chunk check request
     sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
+
+    // free chunk
+    for (auto dataPacket : chunk) {
+        free(dataPacket);
+    }
 }
 
 
-void sendDataPacket(C150DgmSocket *sock, string filename, string dirName, 
-                    int filenastiness, size_t numTotalPackets, 
-                    size_t currChunkNum, int currPacketNum) {
-    char outgoingDataPacket[MAX_PACKET_LEN];
+char *sendDataPacket(C150DgmSocket *sock, string filename, 
+                              string dirName, int filenastiness, 
+                              size_t numTotalPackets, size_t currChunkNum, 
+                              int currPacketNum) {
+    char *outgoingDataPacket = (char *) malloc(sizeof(DataPacket));
     unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
 
     string sourceName = makeFileName(dirName, filename);
@@ -335,50 +351,40 @@ void sendDataPacket(C150DgmSocket *sock, string filename, string dirName,
     memcpy(dataPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
     memcpy(dataPacket.data, buffer, DATA_LEN); // TODO: +1?
     memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
+    free(buffer);
+
+    // TODO: remove:
+    DataPacket *dataPacket2 = reinterpret_cast<DataPacket *>(outgoingDataPacket);
+    printf("Double checking within data generation: ");
+    printf("Unpacking packet %s, %ld, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->numTotalPackets, dataPacket2->packetNumber);
+    printf("Verifying packet type: %d\n", dataPacket2->packetType);
 
     sock -> write(outgoingDataPacket, MAX_PACKET_LEN);
-    free(buffer);
+
+    return outgoingDataPacket;
 }
 
 
-// void sendChunkCheckRequest(C150DgmSocket *sock, char filename[], 
-//                            int currChunkNum) {
-//     assert(sock != NULL);
-//     assert(filename != NULL);
-
-//     ChunkCheckRequestPacket requestPacket;
-//     char incomingResponsePacket[MAX_PACKET_LEN];
-
-//     // request for chunk check
-//     requestPacket.chunkNumber = currChunkNum;
-//     memcpy(requestPacket.filename, filename, strlen(filename) + 1);
-//     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
-    
-//     sendAndRetry(sock, (char *) filename.c_str(), outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE);
-// }
-
-void resendFailedPackets(C150DgmSocket *sock, char filename[], char incomingResponsePacket[]) {
+void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[], 
+                         vector<char *> chunk) {
     ChunkCheckResponsePacket *responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingResponsePacket);
-
-    // assuming that chunkCheck is formed correctly
     vector<int> failedPackets;
+
+    // TODO: wrap around while loop
+    // assuming that chunkCheck is formed correctly
+    // read chunk check
     for (int i = 0; i < responsePacket->numPacketsInChunk; i++) {
-        if (responsePacket->numPacketsInChunk[i] == false) {
+        if (responsePacket->chunkCheck[i] == false) {
             failedPackets.push_back(i);
         }
     }
 
-    // TODO: optimization - read from memory instead of disk
-
     // resend all failed packets
     if (failedPackets.size() > 0) {
-        for (int v : failedPackets) {
-            sendDataPacket(sock, filename, dirName, filenastiness, numTotalPackets, currChunkNum, v);
+        for (int i : failedPackets) {
+            sock -> write(chunk[i], MAX_PACKET_LEN);
         }
     }
-
-    // if responsePacket->bytemap not all 1 -> recalculate corresponding packets and resend
-    // for all i in failedPackets, sendDataPacket()
 }
 
 /* --------------------------END TO END FUNCTIONS--------------------------- */
