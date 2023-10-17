@@ -54,13 +54,15 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 #define MAX_CHUNK_RETRIES 20
 #define MAX_FLUSH_RETRIES 15
 
+
 // file copy functions
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness);
-size_t getTotalChunks(string filename, string dirName);
-void freeChunk(vector<char *> chunk);
-char *generateDataPacket(string filename, string dirName, int filenastiness
-                         size_t currChunkNum, int currPacketNum);
+size_t getTotalPackets(string filename, string dirName);
+unsigned char *generateDataPacket(string filename, string dirName, 
+                                  int filenastiness, size_t numTotalPackets, 
+                                  size_t currChunkNum, int currPacketNum, 
+                                  unsigned char *outgoingDataPacket);
 
 
 // end to end functions
@@ -167,84 +169,111 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
 
     char incomingCheckPacket[MAX_PACKET_LEN];
-    size_t numTotalChunks;
-    size_t currChunkNum = 0;
-    int numRetried = 0;
+    unsigned char outgoingDataPacket[MAX_PACKET_LEN];
+    size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
+    int numPacketsInLastChunk, numRetried = 0;
+    unsigned char *buffer;
 
-    // calculate number of chunks in file
-    numTotalChunks = getTotalChunks(filename, dirName);
-    (void) numTotalChunks;
+    // calculate number of chunks and packets in file
+    fileSize = getFileSize(filename, dirName);
+    numTotalPackets = (fileSize + DATA_LEN - 1) / DATA_LEN; // see references up top
+    numTotalChunks = (numTotalPackets + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    numPacketsInLastChunk = numTotalPackets % CHUNK_SIZE == 0 ? CHUNK_SIZE : numTotalPackets % CHUNK_SIZE;
+    printf("%s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
+
+    // TODO: remove. testing chunk read with local file write
+    unsigned char *file = (unsigned char *) malloc(fileSize+1);
+    
     // keep sending while there are more chunks left
-    // while (currChunkNum < numTotalChunks) {
-    //     chunk = getChunk(filename, dirName, currChunkNum);
-    //     sendAndRetry(sock, filename, chunk, incomingCheckPacket, DATA_PACKET_TYPE, CHUNK_CHECK_PACKET_TYPE, true);
-    //     readChunkCheck(incomingCheckPacket);
+    while (currChunkNum < numTotalChunks) {
+        printf("Getting chunk %ld\n", currChunkNum);
+        if (currChunkNum == numTotalChunks - 1) {
+            printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
+            for (int i = 0; i < numPacketsInLastChunk; i++) {
+                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
 
-    //     // keep sending chunks until full chunk is successfully delivered
-    //     while (sizeof(failedPackets) != 0 && numRetried < MAX_CHUNK_RETRIES) {
-    //         readChunkCheck(incomingCheckPacket);
-    //         numRetried++;
-    //     }
 
-    //     currChunkNum++;
-    // }
+                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
+                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
+                printf("Verifying packet type: %d\n", dp->packetType);
+                printf("Offset is %ld\n", currChunkNum * CHUNK_SIZE + i);
+                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
+                printf("Offset: %ld and write amount: %ld", offset, fileSize - offset);
+                memcpy(file + offset, dp->data, fileSize - offset);
+
+                free(buffer);
+            }
+        } else {
+            for (int i = 0; i < CHUNK_SIZE; i++) {
+                buffer = generateDataPacket(filename, dirName, filenastiness, numTotalPackets, currChunkNum, i, outgoingDataPacket);
+
+                DataPacket *dp = reinterpret_cast<DataPacket *>(outgoingDataPacket);
+                printf("Unpacking packet %s, %ld, %d\n", dp->filename, dp->numTotalPackets, dp->packetNumber);
+                printf("Verifying packet type: %d\n", dp->packetType);
+                size_t offset = (currChunkNum * CHUNK_SIZE + dp->packetNumber) * DATA_LEN;
+                printf("Offset is %ld\n", offset);
+                memcpy(file + offset, dp->data, DATA_LEN);
+                
+                free(buffer);
+            }
+        }
+
+        // sendAndRetry(sock, filename, chunk, incomingCheckPacket, DATA_PACKET_TYPE, CHUNK_CHECK_PACKET_TYPE, true);
+        // readChunkCheck(incomingCheckPacket);
+
+        // // keep sending chunks until full chunk is successfully delivered
+        // while (sizeof(failedPackets) != 0 && numRetried < MAX_CHUNK_RETRIES) {
+        //     readChunkCheck(incomingCheckPacket);
+        //     numRetried++;
+        // }
+
+        currChunkNum++;
+    }
+
+    // TODO: remove. write buffer to file
+    NASTYFILE outputFile(filenastiness);
+    string outputpath = "./write_output/" + filename;
+    void *fopenretval2 = outputFile.fopen(outputpath.c_str(), "wb");  
+    //
+    // Write the whole file
+    //
+    size_t len = outputFile.fwrite(file, 1, fileSize);
+    if (len != fileSize) {
+      cerr << "Error writing file " << outputpath.c_str() << 
+	      "  errno=" << strerror(errno) << endl;
+      exit(16);
+    }
+  
+    if (outputFile.fclose() == 0 ) {
+       cout << "Finished writing file " << outputpath.c_str() <<endl;
+    } else {
+      cerr << "Error closing output file " << outputpath.c_str() << 
+	      " errno=" << strerror(errno) << endl;
+      exit(16);
+    }
+
+    printf("About to free file\n");
+    free(file);
 
     printf("%s copied to server.\n", filename.c_str());
 }
 
 
-// ------------------------------------------------------
-//
-//                   getTotalChunks
-//
-//  Given a filename and a directory name, find how many 
-//  chunks of 8 are in it
-//     
-// ------------------------------------------------------
-size_t getTotalChunks(string filename, string dirName) {
-    size_t fileSize = getFileSize(filename, dirName);
-    // see references up top
-    size_t numTotalChunks = (fileSize + CHUNK_SIZE - 1) / CHUNK_SIZE; 
+unsigned char *generateDataPacket(string filename, string dirName, 
+                                  int filenastiness, size_t numTotalPackets, 
+                                  size_t currChunkNum, int currPacketNum, 
+                                  unsigned char *outgoingDataPacket) {
+    unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
 
-    printf("%s: total size is %ld and number of chunks is %ld\n", filename.c_str(), fileSize, numTotalChunks);
-
-    return numTotalChunks;
-}
-
-
-vector<char *> getChunk(string filename, string dirName, size_t currChunkNum) {
-    vector<string> chunk;
-
-    // load up chunk with data packets
-    for (int i = 0; i < CHUNK_SIZE; i++) {
-        char *dataPacket = generateDataPacket(filename, dirName, currChunkNum, i);
-        chunk.push_back(dataPacket);
-    }
-
-    return chunk;
-}
-
-void freeChunk(vector<char *> chunk) {
-    for (char *dataPacket : chunk) {
-        free(dataPacket);
-    }
-}
-
-
-char *generateDataPacket(string filename, string dirName, int filenastiness
-                         size_t currChunkNum, int currPacketNum) {
-    char dataPacket[MAX_PACKET_LEN];
-    string sourceName = makeFileName(dirName, fileName);
+    string sourceName = makeFileName(dirName, filename);
     size_t fileSize = getFileSize(filename, dirName);
     void *fopenretval;
-    size_t offset;
-    unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
-    NASTYFILE inputFile(nastiness);
+    size_t offset, readAmount, len;
+    NASTYFILE inputFile(filenastiness);
     DataPacket dataPacket;
 
     // open file
-    offset = (currChunkNum * CHUNK_SIZE + currPacketNum) * DATA_LEN
-    inputFile.fseek(offset, SEEK_SET);
+    printf("Generating data packet for file %s, chunk %ld, packet %d\n", filename.c_str(), currChunkNum, currPacketNum);
 
     fopenretval = inputFile.fopen(sourceName.c_str(), "rb");
     if (fopenretval == NULL) {
@@ -252,10 +281,17 @@ char *generateDataPacket(string filename, string dirName, int filenastiness
         " errno=" << strerror(errno) << endl;
       exit(12);
     }
+    printf("File read succeeded\n");
 
+    offset = (currChunkNum * CHUNK_SIZE + currPacketNum) * DATA_LEN;
+    printf("Offset is %ld\n", offset);
+    printf("About to read\n");
+    inputFile.fseek(offset, SEEK_SET);
 
     // read DATA_LEN bytes of data
+    // TOOD: < or <=?
     readAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+    printf("Read amount is %ld\n", readAmount);
     len = inputFile.fread(buffer, 1, readAmount);
     if (len != readAmount) {
       cerr << "Error reading file " << sourceName << 
@@ -269,11 +305,23 @@ char *generateDataPacket(string filename, string dirName, int filenastiness
       exit(16);
     }
 
-
-    // compare with file size
     // TODO: compare cache with disk?
 
-    return dataPacket;
+    // generating data packet
+    dataPacket.numTotalPackets = numTotalPackets;
+    dataPacket.chunkNumber = currChunkNum;
+    dataPacket.packetNumber = currPacketNum;
+    memcpy(dataPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
+    memcpy(dataPacket.data, buffer, DATA_LEN); // TODO: +1?
+    memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
+
+    // TODO: remove:
+    DataPacket *dataPacket2 = reinterpret_cast<DataPacket *>(outgoingDataPacket);
+    printf("Double checking within data generation: ");
+    printf("Unpacking packet %s, %ld, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->numTotalPackets, dataPacket2->packetNumber);
+    printf("Verifying packet type: %d\n", dataPacket2->packetType);
+
+    return buffer;
 }
 
 
