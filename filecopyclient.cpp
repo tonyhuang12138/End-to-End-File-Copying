@@ -224,7 +224,7 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
 
     printf("Begin request packet for %s generated\n", requestPacket.filename);
 
-    sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, CS_REQUEST_PACKET_TYPE, CS_RESPONSE_PACKET_TYPE, SIZE_MAX);
+    sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, BEGIN_REQUEST_PACKET_TYPE, BEGIN_RESPONSE_PACKET_TYPE, SIZE_MAX);
 }
 
 
