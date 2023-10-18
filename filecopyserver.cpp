@@ -47,6 +47,9 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness);
+void sendBeginResponse(C150DgmSocket *sock, char filename[]);
+void readDataPacket(DataPacket *dataPacket, bool bytemap[], 
+                    size_t fileSize, unsigned char fileBuffer[]);
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness);
 void receiveConfirmationPacket(C150DgmSocket *sock, char filename[], 
@@ -55,6 +58,8 @@ void receiveConfirmationPacket(C150DgmSocket *sock, char filename[],
 void renameOrRemove(char filename[], string dirName, int filenastiness, 
                     char incomingPacket[]);
 void sendFinishPacket(C150DgmSocket *sock, char filename[]);
+
+bool validatePacket(char incomingPacket[], char filename[], int readlen);
 
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
@@ -111,38 +116,85 @@ int main(int argc, char *argv[])  {
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness) {
     char incomingPacket[MAX_PACKET_LEN];   // received message data
-    char currFilename[FILENAME_LEN];
+    char currFilename[FILENAME_LEN] = "";
     char incomingFilename[FILENAME_LEN];
-    string incomingPacketFilename;
-    ssize_t readlen;             // amount of data read from socket
+    ssize_t readlen, fileSize, numTotalPackets, numTotalChunks;
     int packetType;
-    // unordered_set<string> processedFiles;
+    size_t currChunkNum = 0;
+    bool bytemap[CHUNK_SIZE];
+    bool allPacketsCorrect = true;
+    unsigned char *fileBuffer;
+    bool startOfFile = true;
+
+    BeginRequestPacket *requestPacketPacket;
+    DataPacket *dataPacket;
+    ChunkCheckRequestPacket *requestPacket;
+    
     
     // listen forever
     while (1) {
         // validate size of received packet
         readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
-        if (readlen == 0) {
-            c150debug->printf(C150APPLICATION,"Read zero length packet, trying again");
-            continue;
-        }
 
         // validate filename: not here!
         getFilename(incomingPacket, incomingFilename);
         printf("Received packet of filename %s\n", incomingFilename);
         // TODO: for now
-        strcpy(currFilename, incomingFilename);
         // if not "" and not currFilename and not in proccessedFiles
         // -> file later in the timeline (impossible) -> abort?
         // reset currFilename to "" after proccessing file?
 
         packetType = getPacketType(incomingPacket);
+        
+        if (!validatePacket(incomingPacket, currFilename, readlen)) continue;
+
+        strcpy(currFilename, incomingFilename);
+
         switch (packetType) {
+            case BEGIN_REQUEST_PACKET_TYPE:
+                printf("Begin request packet received.\n");
+                requestPacketPacket = reinterpret_cast<BeginRequestPacket *>(incomingPacket);
+                // start new file
+                if (startOfFile) {
+                    fileSize = requestPacketPacket->fileSize;
+                    numTotalPackets = requestPacketPacket->numTotalPackets;
+                    numTotalChunks = requestPacketPacket->numTotalChunks;
+                    fileBuffer = (unsigned char *) malloc(fileSize + 1);
+                    startOfFile = false;
+
+                    *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
+
+                    sendBeginResponse(sock, currFilename);
+                }
+
             case DATA_PACKET_TYPE:
                 printf("Data packet received.\n");
-                // readDataPacket(incomingPacket);
-                // put the following log inside
-                // *GRADING << "File: " << filename << " starting to receive file" << endl;
+                dataPacket = reinterpret_cast<DataPacket *>(incomingPacket);
+
+                // validate chunk number
+                if (dataPacket->chunkNumber != currChunkNum) continue;
+
+                // write to buffer
+                readDataPacket(dataPacket, bytemap, fileSize, fileBuffer);
+
+                break;
+
+            case CC_REQUEST_PACKET_TYPE:
+                requestPacket = reinterpret_cast<ChunkCheckRequestPacket *>(incomingPacket);
+
+                // validate chunk number
+                if (requestPacket->chunkNumber != currChunkNum) continue;
+
+                for (int i = 0; i < requestPacket->numPacketsInChunk; i++) {
+                    if (!bytemap[i]) {
+                        allPacketsCorrect = false;
+                        break;
+                    }
+                }
+
+                // when all packets in chunk are confirmed
+                if (allPacketsCorrect) currChunkNum++;
+
                 break;
 
             case CS_REQUEST_PACKET_TYPE:
@@ -160,10 +212,14 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 printf("Checksum comparison packet received.\n");
 
                 // perform necessary filename checks
-
                 renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
+
+                // reset state variables
+                strcpy(currFilename, "");
+                free(fileBuffer);
+                startOfFile = true;
                 break;
 
             default:
@@ -173,6 +229,43 @@ void receivePackets(C150DgmSocket *sock, string dirName,
     }
 }
 
+
+void sendBeginResponse(C150DgmSocket *sock, char filename[]) {
+    assert(sock != NULL);
+    assert(filename != NULL);
+
+    char outgoingResponsePacket[MAX_PACKET_LEN];
+    BeginResponsePacket responsePacket;
+
+    memcpy(responsePacket.filename, filename, strlen(filename) + 1);
+    cout << "strcmp " << strcmp(filename, responsePacket.filename) << endl;
+    cout << responsePacket.packetType << " " << responsePacket.filename << endl;
+    memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
+
+    // write
+    sock -> write(outgoingResponsePacket, MAX_PACKET_LEN);
+    printf("Sent begin response packet for file %s\n", filename);
+}
+
+
+void readDataPacket(DataPacket *dataPacket, bool bytemap[], 
+                    size_t fileSize, unsigned char fileBuffer[]) {
+    // TODO: remove assert
+    assert(dataPacket != NULL);
+    assert(bytemap != NULL);
+
+    // skip write if already written
+    if (bytemap[dataPacket->packetNumber]) return;
+
+    // write to buffer
+    size_t offset = (dataPacket->chunkNumber * CHUNK_SIZE + dataPacket->packetNumber) * DATA_LEN;
+    size_t packetSize = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+
+    printf("Offset: %ld and write amount: %ld\n", offset, packetSize);
+    memcpy(fileBuffer + offset, dataPacket->data, packetSize);
+
+    bytemap[dataPacket->packetNumber] = true;
+}
 
 // ------------------------------------------------------
 //
@@ -292,4 +385,34 @@ void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     cout << "write len " <<  outgoingFinishPacket << endl;
     sock -> write(outgoingFinishPacket, MAX_PACKET_LEN);
     printf("Sent finish packet for file %s\n", filename);
+}
+
+
+// --------------------------------------------------------------------------
+//
+//                           validatePacket
+//
+//  Given an incoming packet, validate that it is not empty, is of the correct
+//  file and has the correct packet type
+//     
+// --------------------------------------------------------------------------
+bool validatePacket(char incomingPacket[], char filename[], int readlen) {
+    char receivedFilename[FILENAME_LEN];
+    int receivedPacketType;   
+
+    // validate size of received packet
+    if (readlen == 0) {
+        fprintf(stderr, "Read zero length message, trying again");
+        return false;
+    }
+
+    // validate filename
+    // TODO: abort when filename unseen?
+    getFilename(incomingPacket, receivedFilename);
+    if (strcmp(filename, "") != 0 && strcmp(receivedFilename, filename) != 0) { 
+        fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);
+        return false;
+    }
+
+    return true;
 }

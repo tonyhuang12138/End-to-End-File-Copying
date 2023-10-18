@@ -57,11 +57,17 @@ int getPacketType(char incomingPacket[]) {
 string packetTypeStringMatch(int packetType) {
     // match packet type for output message
     switch (packetType) {
+        case BEGIN_PACKET_TYPE:
+            return "begin";
+
         case DATA_PACKET_TYPE:
             return "data";
 
-        case CHUNK_CHECK_PACKET_TYPE:
-            return "chunk check";
+        case CC_REQUEST_PACKET_TYPE:
+            return "chunk check request";
+
+        case CC_RESPONSE_PACKET_TYPE:
+            return "chunk check response";
         
         case CS_REQUEST_PACKET_TYPE:
             return "checksum request";
