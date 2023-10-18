@@ -47,18 +47,28 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness);
+// begin phase
 void sendBeginResponse(C150DgmSocket *sock, char filename[]);
+
+// receive data/chunk phase
 void readDataPacket(DataPacket *dataPacket, bool bytemap[], 
                     size_t fileSize, unsigned char fileBuffer[]);
+
+// checksum phase
 void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,  
                         int filenastiness);
 void receiveConfirmationPacket(C150DgmSocket *sock, char filename[], 
                                string dirName, int filenastiness,
                                char outgoingChecksumPacket[]);
+
+// finish phase
+void writeFileBufferToDisk(char filename[], string dirName, int filenastiness, 
+                           size_t fileSize, unsigned char *fileBuffer);
 void renameOrRemove(char filename[], string dirName, int filenastiness, 
                     char incomingPacket[]);
 void sendFinishPacket(C150DgmSocket *sock, char filename[]);
 
+// utility functions
 bool validatePacket(char incomingPacket[], char filename[], int readlen);
 
 
@@ -165,7 +175,14 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
 
                     sendBeginResponse(sock, currFilename);
+                    
+                    // TODO: remove
+                    strcpy(currFilename, "");
+                    free(fileBuffer);
+                    startOfFile = true;
+                    allPacketsCorrect = true;
                 }
+                break;
 
             case DATA_PACKET_TYPE:
                 printf("Data packet received.\n");
@@ -211,6 +228,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
             case CS_COMPARISON_PACKET_TYPE: 
                 printf("Checksum comparison packet received.\n");
 
+                writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
                 // perform necessary filename checks
                 renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
@@ -324,6 +342,34 @@ void sendChecksumPacket(C150DgmSocket *sock, char filename[], string dirName,
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
 
     printf("Checksum response package for file %s sent\n", filename);
+}
+
+
+void writeFileBufferToDisk(char filename[], string dirName, int filenastiness, 
+                           size_t fileSize, unsigned char *fileBuffer) {
+    assert(filename != NULL);
+    assert(fileBuffer != NULL);
+
+    NASTYFILE outputFile(filenastiness);
+    string outputpath = makeFileName(dirName, filename) + "-TMP";
+    void *fopenretval2 = outputFile.fopen(outputpath.c_str(), "wb");  
+    //
+    // Write the whole file
+    //
+    size_t len = outputFile.fwrite(fileBuffer, 1, fileSize);
+    if (len != fileSize) {
+      cerr << "Error writing file " << outputpath.c_str() << 
+	      "  errno=" << strerror(errno) << endl;
+      exit(16);
+    }
+  
+    if (outputFile.fclose() == 0 ) {
+       cout << "Finished writing file " << outputpath.c_str() <<endl;
+    } else {
+      cerr << "Error closing output file " << outputpath.c_str() << 
+	      " errno=" << strerror(errno) << endl;
+      exit(16);
+    }
 }
 
 

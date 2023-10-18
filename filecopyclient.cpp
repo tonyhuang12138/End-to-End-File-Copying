@@ -112,7 +112,7 @@ int main(int argc, char *argv[]) {
 
     // create the socket and tell the DGMSocket which server to talk to
     C150DgmSocket *sock = new C150NastyDgmSocket(networknastiness);
-    sock -> setServerName(argv[serverArg]);  
+    sock -> setServerName(argv[serverArg]);
     sock -> turnOnTimeouts(3000);
 
     try {
@@ -177,20 +177,22 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     int numPacketsInLastChunk, numRetried = 0;
 
     sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, &numTotalPackets, &numTotalChunks, &numPacketsInLastChunk);
+
+    printf("Verifying: %s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
     
     // keep sending while there are more chunks left
-    while (currChunkNum < numTotalChunks) {
-        printf("Getting chunk %ld\n", currChunkNum);
-        if (currChunkNum == numTotalChunks - 1) {
-            printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
-            // extract data from file and send to server as packets
-            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInLastChunk);
-        } else {
-            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, CHUNK_SIZE);
-        }
+    // while (currChunkNum < numTotalChunks) {
+    //     printf("Getting chunk %ld\n", currChunkNum);
+    //     if (currChunkNum == numTotalChunks - 1) {
+    //         printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
+    //         // extract data from file and send to server as packets
+    //         sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInLastChunk);
+    //     } else {
+    //         sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, CHUNK_SIZE);
+    //     }
 
-        currChunkNum++;
-    }
+    //     currChunkNum++;
+    // }
 
     printf("%s copied to server.\n", filename.c_str());
 }
@@ -202,7 +204,7 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
     assert(sock != NULL);
     assert(filename != NULL);
     
-    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 1 << ">" << endl;
+    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 0 << ">" << endl;
 
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
@@ -470,11 +472,11 @@ bool compareHash(char filename[], string dirName,
     cout << "Comparing hash\n";
     if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
         printf("End to end succeeded for file %s\n", filename);
-        *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 1 << endl;
+        *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 0 << endl;
         return true;
     } else {
         printf("End to end failed for file %s\n", filename);
-        *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 1 << endl;
+        *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 0 << endl;
         return false;
     }
 }

@@ -57,8 +57,11 @@ int getPacketType(char incomingPacket[]) {
 string packetTypeStringMatch(int packetType) {
     // match packet type for output message
     switch (packetType) {
-        case BEGIN_PACKET_TYPE:
-            return "begin";
+        case BEGIN_REQUEST_PACKET_TYPE:
+            return "begin request";
+
+        case BEGIN_RESPONSE_PACKET_TYPE:
+            return "begin response";
 
         case DATA_PACKET_TYPE:
             return "data";
@@ -97,7 +100,7 @@ string packetTypeStringMatch(int packetType) {
 // ------------------------------------------------------
 void getFilename(char incomingPacket[], char filename[]) {
     strcpy(filename, incomingPacket + PACKET_TYPE_LEN);
-    printf("Filename is %s\n", filename);
+    printf("Getting filename: %s\n", filename);
 }
 
 
