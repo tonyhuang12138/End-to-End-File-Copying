@@ -100,7 +100,7 @@ string packetTypeStringMatch(int packetType) {
 // ------------------------------------------------------
 void getFilename(char incomingPacket[], char filename[]) {
     strcpy(filename, incomingPacket + PACKET_TYPE_LEN);
-    printf("Getting filename: %s\n", filename);
+    // printf("Getting filename: %s\n", filename);
 }
 
 

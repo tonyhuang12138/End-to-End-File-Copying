@@ -137,9 +137,9 @@ int main(int argc, char *argv[]) {
             copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
 
             // end to end
-            // char incomingResponsePacket[MAX_PACKET_LEN];
-            // sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
-            // sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
+            char incomingResponsePacket[MAX_PACKET_LEN];
+            sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
+            sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
         }
 
         closedir(SRC);
@@ -181,18 +181,18 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     printf("Verifying: %s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
     
     // keep sending while there are more chunks left
-    // while (currChunkNum < numTotalChunks) {
-    //     printf("Getting chunk %ld\n", currChunkNum);
-    //     if (currChunkNum == numTotalChunks - 1) {
-    //         printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
-    //         // extract data from file and send to server as packets
-    //         sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInLastChunk);
-    //     } else {
-    //         sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, CHUNK_SIZE);
-    //     }
+    while (currChunkNum < numTotalChunks) {
+        printf("Getting chunk %ld\n", currChunkNum);
+        if (currChunkNum == numTotalChunks - 1) {
+            printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
+            // extract data from file and send to server as packets
+            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInLastChunk);
+        } else {
+            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, CHUNK_SIZE);
+        }
 
-    //     currChunkNum++;
-    // }
+        currChunkNum++;
+    }
 
     printf("%s copied to server.\n", filename.c_str());
 }
