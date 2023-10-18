@@ -220,6 +220,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 strcpy(currFilename, "");
                 free(fileBuffer);
                 startOfFile = true;
+                allPacketsCorrect = true;
                 break;
 
             default:
