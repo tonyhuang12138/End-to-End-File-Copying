@@ -163,18 +163,18 @@ void receivePackets(C150DgmSocket *sock, string dirName,
         // -> file later in the timeline (impossible) -> abort?
         // reset currFilename to "" after proccessing file?
 
-        packetType = getPacketType(incomingPacket);
-        
+        // validate packet invariants
         if (!validatePacket(incomingPacket, currFilename, readlen)) continue;
 
-        strcpy(currFilename, incomingFilename);
-
+        packetType = getPacketType(incomingPacket);
         switch (packetType) {
             case BEGIN_REQUEST_PACKET_TYPE:
                 printf(" * * * Begin request packet received. * * * \n");
                 requestPacketPacket = reinterpret_cast<BeginRequestPacket *>(incomingPacket);
                 // start new file
                 if (startOfFile) {
+                    strcpy(currFilename, incomingFilename);
+
                     fileSize = requestPacketPacket->fileSize;
                     numTotalPackets = requestPacketPacket->numTotalPackets;
                     numTotalChunks = requestPacketPacket->numTotalChunks;
@@ -262,7 +262,9 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 sendFinishPacket(sock, currFilename);
 
                 // reset state variables
+                printf("VERIFY: filename reset from %s ", currFilename);
                 strcpy(currFilename, "");
+                printf("to %s\n", currFilename);
                 if (fileBuffer != NULL) {
                     cout << "Freeing" << endl;
                     free(fileBuffer);
