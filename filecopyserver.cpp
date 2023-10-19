@@ -177,8 +177,8 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                     *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
 
-                    sendBeginResponse(sock, currFilename);
                 }
+                sendBeginResponse(sock, currFilename);
                 break;
 
             case DATA_PACKET_TYPE:
@@ -186,10 +186,13 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 dataPacket = reinterpret_cast<DataPacket *>(incomingPacket);
 
                 // validate chunk number
-                // if (dataPacket->chunkNumber != currChunkNum) {
-                //     printf("Error: should be receiving data of chunk number %ld but received %ld instead\n", currChunkNum, dataPacket->chunkNumber);
-                //     continue;
-                // }
+                if (dataPacket->chunkNumber < currChunkNum) {
+                    printf("FLUSHING: should be receiving data of chunk number %ld but received %ld instead\n", currChunkNum, dataPacket->chunkNumber);
+                    continue;
+                } else if (dataPacket->chunkNumber > currChunkNum) {
+                    currChunkNum++;
+                    printf("NEW CHUNK: start receiving data for new chunk %ld\n", currChunkNum);
+                }
 
                 // write to buffer
                 readDataPacket(dataPacket, bytemap, fileSize, fileBuffer);
@@ -199,6 +202,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
             case CC_REQUEST_PACKET_TYPE:
                 printf(" * * * Chunk check request packet received. * * * \n");
                 requestPacket = reinterpret_cast<ChunkCheckRequestPacket *>(incomingPacket);
+                printf("Current chunk number is: %ld\n", currChunkNum);
 
                 // validate chunk number
                 if (requestPacket->chunkNumber != currChunkNum) {
@@ -206,11 +210,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     continue;
                 }
 
-                // when all packets in chunk are confirmed
-                if (sendChunkCheckResponse(sock, bytemap, requestPacket)) {
-                    printf("Log: chunk %ld validated, incrementing chunk number\n", currChunkNum);
-                    currChunkNum++;
-                }
+                sendChunkCheckResponse(sock, bytemap, requestPacket);
 
                 break;
 
@@ -230,13 +230,15 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                 writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
                 // perform necessary filename checks
-                // renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
+                renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
 
                 // reset state variables
                 strcpy(currFilename, "");
                 free(fileBuffer);
+                startOfFile = true;
+                currChunkNum = 0;
                 break;
 
             default:
