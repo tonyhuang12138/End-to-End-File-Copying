@@ -257,7 +257,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 printf(" * * * Checksum comparison packet received. * * * \n");
 
                 // perform necessary filename checks
-                // renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
+                renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
 
@@ -268,7 +268,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     free(fileBuffer);
                     fileBuffer = NULL;
                 }
-                
+
                 startOfFile = true;
                 currChunkNum = 0;
                 memset(bytemap, 0, CHUNK_SIZE);
@@ -451,6 +451,9 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
 
 void renameOrRemove(char filename[], string dirName, int filenastiness, 
                     char incomingPacket[]) {
+    assert(filename != NULL);
+    assert(incomingPacket != NULL);
+    
     cout << "In rename or remove\n";
     
     NASTYFILE file(filenastiness);
@@ -494,6 +497,7 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
 
 void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     assert(sock != NULL);
+    assert(filename != NULL);
 
     char outgoingFinishPacket[MAX_PACKET_LEN];
     FinishPacket finishPacket;
@@ -519,6 +523,9 @@ void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
 //     
 // --------------------------------------------------------------------------
 bool validatePacket(char incomingPacket[], char filename[], int readlen) {
+    assert(filename != NULL);
+    assert(incomingPacket != NULL);
+
     char receivedFilename[FILENAME_LEN];
     int receivedPacketType;   
 

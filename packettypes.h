@@ -18,7 +18,7 @@
 #define FILENAME_LEN 50
 #define DATA_LEN 440 // 512 - 4 - 50 - 8 - 4 (and padding)
 
-#define CHUNK_SIZE 8
+#define CHUNK_SIZE 440
 
 // client to server
 struct BeginRequestPacket {
