@@ -274,6 +274,7 @@ unsigned char *copyFile(string sourceDir, string fileName, int nastiness,
     //
     len = inputFile.fread(buffer, 1, sourceSize);
     if (len != sourceSize) {
+      cerr << "Expected size " << sourceSize << " but read size " << len << endl;
       cerr << "Error reading file " << sourceName << 
         "  errno=" << strerror(errno) << endl;
       exit(16);

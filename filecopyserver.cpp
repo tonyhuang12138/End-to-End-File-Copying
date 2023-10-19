@@ -55,7 +55,7 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
                     size_t fileSize, unsigned char fileBuffer[]);
 
 // chunk check phase
-bool sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
+void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
                             ChunkCheckRequestPacket *requestPacket);
 
 // checksum phase
@@ -197,6 +197,8 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 // write to buffer
                 readDataPacket(dataPacket, bytemap, fileSize, fileBuffer);
 
+                printf("Double checking flipping result: %d\n", bytemap[dataPacket->packetNumber]);
+
                 break;
 
             case CC_REQUEST_PACKET_TYPE:
@@ -220,6 +222,8 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 // TODO: can we have duplicates logs?
                 *GRADING << "File: " << currFilename << " received, beginning end-to-end check" << endl;
 
+                // TODO: add if not written before
+                writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
                 sendChecksumResponse(sock, currFilename, dirName, filenastiness);
 
                 printf("Sent checksum packet for file %s\n", currFilename);
@@ -228,7 +232,6 @@ void receivePackets(C150DgmSocket *sock, string dirName,
             case CS_COMPARISON_PACKET_TYPE: 
                 printf(" * * * Checksum comparison packet received. * * * \n");
 
-                writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
                 // perform necessary filename checks
                 renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
@@ -284,12 +287,15 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     printf("Offset: %ld and write amount: %ld\n", offset, packetSize);
     memcpy(fileBuffer + offset, dataPacket->data, packetSize);
 
+    printf("Flipping byte in byte map: %d\n", dataPacket->packetNumber);
+    printf("Before flipping %d\n", bytemap[dataPacket->packetNumber]);
     bytemap[dataPacket->packetNumber] = true;
+    printf("After flipping %d\n", bytemap[dataPacket->packetNumber]);
     printf("Finish readDataPacket\n");
 }
 
 
-bool sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
+void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
                             ChunkCheckRequestPacket *requestPacket) {
     assert(sock != NULL);
     assert(bytemap != NULL);
@@ -301,17 +307,30 @@ bool sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     bool allPacketsCorrect = true;
 
     // check if all packets had been delivered
+    printf("In chunk check response, printing results: ");
     for (int i = 0; i < requestPacket->numPacketsInChunk; i++) {
         if (bytemap[i] != true) {
             allPacketsCorrect = false;
+            printf("Packet failed: %d\n", i);
             break;
         }
+        cout << bytemap[i];
     }
+    cout << endl;
+
+    if (allPacketsCorrect) {
+        cout << "All packets correct\n";
+    } else {
+        cout << "Not all packets correct\n";
+    }
+
 
     // set filename
     memcpy(responsePacket.filename, requestPacket->filename, strlen(requestPacket->filename) + 1);
     cout << "strcmp " << strcmp(requestPacket->filename, responsePacket.filename) << endl;
     cout << responsePacket.packetType << " " << responsePacket.filename << endl;
+
+    memcpy(responsePacket.chunkCheck, bytemap, CHUNK_SIZE);
 
     responsePacket.chunkNumber = requestPacket->chunkNumber;
     responsePacket.numPacketsInChunk = requestPacket->numPacketsInChunk;
@@ -323,8 +342,6 @@ bool sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
 
     // reset bytemap if all packets in chunk are received
     if (allPacketsCorrect) memset(bytemap, 0, CHUNK_SIZE);
-
-    return allPacketsCorrect;
 }
 
 // ------------------------------------------------------
@@ -356,7 +373,8 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
     tempFilename += "-TMP";
 
     printf("Original filename is %s, adjusted temp filename is %s\n", filename, tempFilename.c_str());
-    
+
+    cout << "Entering sha1\n";
     sha1(tempFilename, dirName, filenastiness, checksum);
     
     printf("Printing calculated checksum: ");
@@ -420,9 +438,8 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
     
     NASTYFILE file(filenastiness);
     ChecksumComparisonPacket *comparisonPacket = reinterpret_cast<ChecksumComparisonPacket *>(incomingPacket);
-    string tempFilename = filename;
-    tempFilename += "-TMP";
-    string tempFullPath = dirName + '/' + tempFilename;
+    string fullPath = makeFileName(dirName, filename);
+    string tempFullPath = fullPath + "-TMP";
 
     // TODO: check if the filename matches with current file
     if (strcmp((char *) filename, comparisonPacket->filename) != 0){

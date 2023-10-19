@@ -59,7 +59,7 @@ struct ChunkCheckResponsePacket {
     char filename[FILENAME_LEN]; 
     size_t chunkNumber;
     int numPacketsInChunk; // only check numPacketsInChunk packets
-    char chunkCheck[CHUNK_SIZE]; 
+    bool chunkCheck[CHUNK_SIZE]; 
 };
 
 // client to server

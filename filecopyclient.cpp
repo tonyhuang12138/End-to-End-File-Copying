@@ -250,8 +250,6 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
         chunk.push_back(outgoingDataPacket);
     }
 
-    // sendChunkCheckRequest(sock, filename, );
-
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
     ChunkCheckRequestPacket requestPacket;
@@ -360,7 +358,7 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
         }
 
         if (failedPackets.size() > 0) {
-            *GRADING << "File: " << responsePacket->filename << ", chunk(" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber << " of " << numTotalChunks << " total chunks write failed, retry attempt " << numRetried + 1 << endl;
+            *GRADING << "File: " << responsePacket->filename << ", chunk (" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber+1 << " of " << numTotalChunks << " total chunks write failed, with " << failedPackets.size() << " packets failing. Retry attempt " << numRetried + 1 << endl;
         }
 
         // resend all failed packets
