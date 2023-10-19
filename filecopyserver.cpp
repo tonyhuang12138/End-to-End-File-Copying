@@ -135,14 +135,20 @@ void receivePackets(C150DgmSocket *sock, string dirName,
     ssize_t readlen, fileSize, numTotalPackets, numTotalChunks;
     int packetType;
     size_t currChunkNum = 0;
-    bool bytemap[CHUNK_SIZE]; // for current chunk
+    bool bytemap[CHUNK_SIZE] = {0}; // for current chunk
     unsigned char *fileBuffer;
     bool startOfFile = true;
 
     BeginRequestPacket *requestPacketPacket;
     DataPacket *dataPacket;
     ChunkCheckRequestPacket *requestPacket;
+
     
+    cout << "INITIAL BYTEMAP: Printing out bytemap for chunk " << currChunkNum << " : ";
+    for (bool b: bytemap) {
+        printf("%s ", b ? "true" : "false");
+    }
+    cout << endl;
     
     // listen forever
     while (1) {
@@ -174,6 +180,8 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     numTotalChunks = requestPacketPacket->numTotalChunks;
                     fileBuffer = (unsigned char *) malloc(fileSize + 1);
                     startOfFile = false;
+                    currChunkNum = 0;
+                    memset(bytemap, 0, CHUNK_SIZE);
 
                     *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
 
@@ -190,14 +198,23 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     printf("FLUSHING: should be receiving data of chunk number %ld but received %ld instead\n", currChunkNum, dataPacket->chunkNumber);
                     continue;
                 } else if (dataPacket->chunkNumber > currChunkNum) {
+                    memset(bytemap, 0, CHUNK_SIZE);
                     currChunkNum++;
                     printf("NEW CHUNK: start receiving data for new chunk %ld\n", currChunkNum);
                 }
+
+                printf("FILENAME: packet has filename %s\n", dataPacket->filename);
 
                 // write to buffer
                 readDataPacket(dataPacket, bytemap, fileSize, fileBuffer);
 
                 printf("Double checking flipping result: %d\n", bytemap[dataPacket->packetNumber]);
+
+                cout << "Printing out bytemap for chunk " << currChunkNum << " : ";
+                for (bool b: bytemap) {
+                    printf("%s ", b ? "true" : "false");
+                }
+                cout << endl;
 
                 break;
 
@@ -213,6 +230,13 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 }
 
                 sendChunkCheckResponse(sock, bytemap, requestPacket);
+
+                printf("BYTEMAP - after chunk check response: ");
+                cout << "Printing out bytemap for chunk " << currChunkNum << " : ";
+                for (bool b: bytemap) {
+                    printf("%s ", b ? "true" : "false");
+                }
+                cout << endl;
 
                 break;
 
@@ -233,15 +257,21 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 printf(" * * * Checksum comparison packet received. * * * \n");
 
                 // perform necessary filename checks
-                renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
+                // renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
 
                 // reset state variables
                 strcpy(currFilename, "");
-                free(fileBuffer);
+                if (fileBuffer != NULL) {
+                    cout << "Freeing" << endl;
+                    free(fileBuffer);
+                    fileBuffer = NULL;
+                }
+                
                 startOfFile = true;
                 currChunkNum = 0;
+                memset(bytemap, 0, CHUNK_SIZE);
                 break;
 
             default:
@@ -276,7 +306,8 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     assert(dataPacket != NULL);
     assert(bytemap != NULL);
 
-    printf("Inside readDataPacket\n");
+    printf("Data packet has chunk number %ld and packet number %d\n", dataPacket->chunkNumber, dataPacket->packetNumber);
+
     // skip write if already written
     if (bytemap[dataPacket->packetNumber] == true) return;
 
@@ -284,7 +315,7 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     size_t offset = (dataPacket->chunkNumber * CHUNK_SIZE + dataPacket->packetNumber) * DATA_LEN;
     size_t packetSize = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
 
-    printf("Offset: %ld and write amount: %ld\n", offset, packetSize);
+    printf("OFFSET: %ld and write amount: %ld\n", offset, packetSize);
     memcpy(fileBuffer + offset, dataPacket->data, packetSize);
 
     printf("Flipping byte in byte map: %d\n", dataPacket->packetNumber);
@@ -341,7 +372,7 @@ void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     printf("Sent chunk check response for %s\n", responsePacket.filename);
 
     // reset bytemap if all packets in chunk are received
-    if (allPacketsCorrect) memset(bytemap, 0, CHUNK_SIZE);
+    // if (allPacketsCorrect) memset(bytemap, 0, CHUNK_SIZE);
 }
 
 // ------------------------------------------------------
@@ -376,23 +407,9 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
 
     cout << "Entering sha1\n";
     sha1(tempFilename, dirName, filenastiness, checksum);
-    
-    printf("Printing calculated checksum: ");
-    for (int i = 0; i < 20; i++)
-    {
-        printf ("%02x", (unsigned int) checksum[i]);
-    }
-    printf ("\n");
 
     // TODO: +1??
     memcpy(responsePacket.checksum, checksum, HASH_CODE_LENGTH);
-
-    printf("Printing calculated checksum: ");
-    for (int i = 0; i < 20; i++)
-    {
-        printf ("%02x", (unsigned int) responsePacket.checksum[i]);
-    }
-    printf ("\n");
 
     // TODO: remove
     assert(memcmp(responsePacket.checksum, checksum, HASH_CODE_LENGTH) == 0);
@@ -509,7 +526,7 @@ bool validatePacket(char incomingPacket[], char filename[], int readlen) {
 
     // validate size of received packet
     if (readlen == 0) {
-        fprintf(stderr, "Read zero length message, trying again");
+        // fprintf(stderr, "Read zero length message, trying again");
         return false;
     }
 

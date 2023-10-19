@@ -1,0 +1,8 @@
+THIS IS LOG FILE: GRADELOG.filecopyserver.2023:10:19_01:10:22.txt
+Grading log started on 10/19/2023 01:10:22.217530 Command line = [./filecopyserver 1 0 TARGET2]
+File: romeo.txt starting to receive file, expecting a total of 323 data packets delivered in 41 chunks of size 8
+File: romeo.txt received, beginning end-to-end check
+File: data10000 starting to receive file, expecting a total of 1614 data packets delivered in 202 chunks of size 8
+File: data10000 received, beginning end-to-end check
+File: data1000 starting to receive file, expecting a total of 162 data packets delivered in 21 chunks of size 8
+File: data1000 received, beginning end-to-end check
