@@ -56,9 +56,8 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 #define MAX_FILE_RETRIES 5
 #define MAX_PKT_RETRIES 20
-#define MAX_CHUNK_RETRIES 20
 #define MAX_FLUSH_RETRIES 15
-#define MAX_RESENDS 20
+#define MAX_CHUNK_RETRIES 40
 #define MAX_DATA_SAMPLES 15
 
 
@@ -215,7 +214,7 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
     assert(sock != NULL);
     assert(filename != NULL);
     
-    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << attempt << ">" << endl;
+    *GRADING << "File: " << filename << ", beginning transmission, attempt " << attempt << endl;
 
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
@@ -388,7 +387,7 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
     bool firstRead = true;
     int numRetried = 0;
 
-    while (firstRead || (failedPackets.size() > 0 && numRetried < MAX_RESENDS)) {
+    while (firstRead || (failedPackets.size() > 0 && numRetried < MAX_CHUNK_RETRIES)) {
         numRetried++;
         firstRead = false;
         failedPackets.clear();
@@ -411,8 +410,8 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
         sendAndRetry(sock, responsePacket->filename, outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE, responsePacket->chunkNumber);
     }
 
-    if (numRetried == MAX_RESENDS) {
-        *GRADING << "File: " << responsePacket->filename << ", chunk(" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber << " of " << numTotalChunks << " total chunks write failed after " << MAX_RESENDS << " retries, skipping current chunk." << endl;
+    if (numRetried == MAX_CHUNK_RETRIES) {
+        *GRADING << "File: " << responsePacket->filename << ", chunk(" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber << " of " << numTotalChunks << " total chunks write failed after " << MAX_CHUNK_RETRIES << " retries, skipping current chunk." << endl;
     }
 }
 
@@ -588,6 +587,8 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
 
     // throw exception if all retries exceeded
     if (numRetried == MAX_PKT_RETRIES) throw C150NetworkException("Timed out after 5 retries.");
+
+    printf("RECEIVED packet of file %s and type %s", filename, packetTypeStringMatch(incomingPacketType).c_str());
 }
 
 // --------------------------------------------------------------------------

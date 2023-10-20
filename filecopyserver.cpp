@@ -161,7 +161,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
         // validate packet invariants
         packetType = getPacketType(incomingPacket);
         if (!validatePacket(incomingPacket, currFilename, packetType, readlen)) continue;
-        
+
         switch (packetType) {
             case BEGIN_REQUEST_PACKET_TYPE:
                 printf(" * * * Begin request packet received. * * * \n");
@@ -306,6 +306,8 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     assert(dataPacket != NULL);
     assert(bytemap != NULL);
 
+    if (fileBuffer == NULL) return;
+
     printf("Data packet has chunk number %ld and packet number %d\n", dataPacket->chunkNumber, dataPacket->packetNumber);
 
     // skip write if already written
@@ -402,7 +404,8 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
 void writeFileBufferToDisk(char filename[], string dirName, int filenastiness, 
                            size_t fileSize, unsigned char *fileBuffer) {
     assert(filename != NULL);
-    assert(fileBuffer != NULL);
+
+    if (fileBuffer == NULL) return;
 
     if (strcmp(filename, ".hi") == 0) {
         cerr << "SPECIAL: ";
