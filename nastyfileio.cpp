@@ -100,7 +100,7 @@ unsigned char *findMostFrequentSHA(string filename, string dirName,
     string mode;
 
     // sample sha MAX_SAMPLES times
-    for (int i = 0; i < MAX_SAMPLES; i++) {
+    for (int i = 0; i < MAX_SHA_SAMPLES; i++) {
         checksum = sha1(filename, dirName, filenastiness);
 
         if (checksum == NULL) continue;

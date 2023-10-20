@@ -403,15 +403,26 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
     assert(filename != NULL);
     assert(fileBuffer != NULL);
 
+    if (strcmp(filename, ".hi") == 0) {
+        cerr << "SPECIAL: ";
+        for (int i = 0; i < 15; i++) {
+            cerr << fileBuffer[i];
+        }
+        cerr << endl;
+        fprintf(stderr, "SPECIAL: '%s' %s file size should be %ld\n", fileBuffer, filename, fileSize);
+    }
+
     NASTYFILE outputFile(filenastiness);
-    string outputpath = makeFileName(dirName, filename) + "-TMP";
+    string tempFilename = filename;
+    tempFilename += "-TMP";
+    string outputpath = makeFileName(dirName, tempFilename);
     void *fopenretval;
-    size_t len;
+    size_t writeLen, readLen;
     int numRetried = 0;
     unsigned char *diskread = NULL;
     (void) fopenretval;
 
-    while (diskread == NULL || (memcmp(fileBuffer, diskread, fileSize) != 0 && numRetried < MAX_RETRIES)) {
+    while (diskread == NULL || ((writeLen != fileSize || readLen != fileSize || memcmp(fileBuffer, diskread, fileSize) != 0) && numRetried < MAX_RETRIES)) {
         numRetried++;
 
         if (diskread != NULL) {
@@ -423,10 +434,10 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
         fopenretval = outputFile.fopen(outputpath.c_str(), "wb");  
     
         // write entire file
-        len = outputFile.fwrite(fileBuffer, 1, fileSize);
-        if (len != fileSize) {
-        cerr << "Error writing file " << outputpath.c_str() << 
-            "  errno=" << strerror(errno) << endl;
+        writeLen = outputFile.fwrite(fileBuffer, 1, fileSize);
+        fprintf(stdout, "Writelen is %ld and file size shoudl be %ld\n", writeLen, fileSize);
+        if (writeLen != fileSize) {
+            fprintf(stderr, "Expecting write len of %ld but wrote %ld\n", fileSize, writeLen);
             continue;
         }
     
@@ -438,7 +449,13 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
             continue;
         }
 
-        diskread = bufferFile(dirName.c_str(), filename, filenastiness, &len);
+        diskread = bufferFile(dirName.c_str(), tempFilename, filenastiness, &readLen);
+
+        fprintf(stdout, "Readlen is %ld and file size shoudl be %ld\n", readLen, fileSize);
+        if (readLen != fileSize) {
+            fprintf(stderr, "Expecting read len of %ld but read %ld\n", fileSize, readLen);
+            continue;
+        }
     }
 
     if (numRetried == MAX_RETRIES) fprintf(stderr, "WRITE FAILED: %s after %d tries.\n", filename, numRetried);

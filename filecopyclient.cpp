@@ -58,6 +58,7 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 #define MAX_CHUNK_RETRIES 20
 #define MAX_FLUSH_RETRIES 15
 #define MAX_RESENDS 20
+#define MAX_DATA_SAMPLES 15
 
 
 // file copy functions
@@ -307,8 +308,8 @@ unsigned char *findMostFrequentData(string sourceName, size_t offset,
     int currentMax = 0;
     string mode;
 
-    // sample data MAX_SAMPLES times
-    for (int i = 0; i < MAX_SAMPLES; i++) {
+    // sample data MAX_DATA_SAMPLES times
+    for (int i = 0; i < MAX_DATA_SAMPLES; i++) {
         extractedData = extractDataFromFile(sourceName, offset, readAmount, filenastiness);
         string key(extractedData, extractedData + readAmount);
         frequencyCount[key]++;
@@ -500,6 +501,20 @@ bool compareHash(char filename[], string dirName,
     // compute local checksum
     localChecksum = findMostFrequentSHA(filename, dirName, filenastiness);
 
+    printf("Printing local checksum: ");
+    for (int i = 0; i < 20; i++)
+    {
+        printf ("%02x", (unsigned int) localChecksum[i]);
+    }
+    printf ("\n");
+
+    printf("Printing received checksum: ");
+    for (int i = 0; i < 20; i++)
+    {
+        printf ("%02x", (unsigned int) responsePacket->checksum[i]);
+    }
+    printf ("\n");
+
     // compare checksums
     cout << "Comparing hash\n";
     if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
@@ -511,6 +526,8 @@ bool compareHash(char filename[], string dirName,
         *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 0 << endl;
         return false;
     }
+
+    free(localChecksum);
 }
 
 /* ----------------------------UTILITY FUNCTIONS---------------------------- */

@@ -37,6 +37,6 @@ for file in "$FOLDER1"/*; do
             echo "No differences in $filename."
         fi
     else
-        echo "File $filename does not exist in $FOLDER2."
+        echo "!!!!!!!!!!File $filename does not exist in $FOLDER2.!!!!!!!!!!"
     fi
 done
