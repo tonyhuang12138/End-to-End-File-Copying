@@ -116,6 +116,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
+    // reading nastiness from input
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
 
@@ -132,24 +133,26 @@ int main(int argc, char *argv[]) {
             exit(8);
         }
 
-        // loop through all filenames in src dir
         char incomingResponsePacket[MAX_PACKET_LEN];
         bool transferSuccess = false;
         int numRetried = 0;
-        while (dirent *f = readdir(SRC)) {
-            char path[500];
+        char path[500];
 
+        // check all files in the directory
+        while (dirent *f = readdir(SRC)) {
             sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
 
             // skip all subdirectories
             if (!f->d_name || isDirectory(path)) continue; 
             
+            // recopy a file up to MAX_FILE_RETRIES times
             while (transferSuccess == false && numRetried < MAX_FILE_RETRIES) {
                 numRetried++;
 
+                // file copy
                 copyFile(sock, f->d_name, argv[srcdirArg], filenastiness, numRetried);
 
-                // end to end
+                // end to end check
                 sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
                 transferSuccess = sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, numRetried, incomingResponsePacket);
             }
@@ -164,8 +167,8 @@ int main(int argc, char *argv[]) {
         c150debug->printf(C150ALWAYSLOG,"Caught C150NetworkException: %s\n",
                         e.formattedExplanation().c_str());
         // In case we're logging to a file, write to the console too
-        cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation()
-                        << endl;
+        cerr << argv[0] << ": caught C150NetworkException: " 
+             << e.formattedExplanation() << endl;
     }
 
     return 0;
@@ -184,6 +187,7 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     size_t fileSize, numTotalPackets, numTotalChunks, numPacketsInChunk, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
 
+    // send a begin packet to server to notify it to receive a new file
     sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, 
                      &numTotalPackets, attempt, &numTotalChunks, 
                      &numPacketsInLastChunk);
@@ -192,13 +196,13 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     
     // keep sending while there are more chunks left
     while (currChunkNum < numTotalChunks) {
-        currChunkNum++;
-
         // check if current chunk is last chunk
-        numPacketsInChunk = currChunkNum == numTotalChunks ? 
-                                            numPacketsInLastChunk : CHUNK_SIZE;
+        numPacketsInChunk = (currChunkNum == numTotalChunks - 1) ? 
+                                             numPacketsInLastChunk : CHUNK_SIZE;
 
         sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInChunk);
+
+        currChunkNum++;
     }
 
     printf("%s copied to server.\n", filename.c_str());
