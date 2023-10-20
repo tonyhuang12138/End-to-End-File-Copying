@@ -98,6 +98,9 @@ void validatePacket(char incomingPacket[], int incomingPacketType,
                     char filename[], int readlen, bool *timeout, 
                     int *numRetried, int *numFlushed, bool retryFlag,
                     size_t currChunkNum);
+void validateChunkNumber(char incomingPacket[], size_t currChunkNum, 
+                         bool *timeout, int *numRetried, int *numFlushed, 
+                         bool retryFlag) ;
 
 
 const int serverArg = 1;                  // server name is 1st arg
@@ -600,20 +603,23 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     if (numRetried == MAX_PKT_RETRIES) throw C150NetworkException(errorMsg);
 }
 
+
 // --------------------------------------------------------------------------
 //
 //                           validatePacket
 //
 //  Given an incoming packet, validate that it is not empty, is of the correct
-//  file and has the correct packet type
+//  file and has the correct packet type and chunk number if applicable; 
+//  update status variables regarding timeout, number retried and number 
+//  flushed accordingly
 //     
 // --------------------------------------------------------------------------
 void validatePacket(char incomingPacket[], int incomingPacketType, 
                     char filename[], int readlen, bool *timeout, 
                     int *numRetried, int *numFlushed, bool retryFlag,
                     size_t currChunkNum) {
-    char receivedFilename[FILENAME_LEN];
-    int receivedPacketType;  
+    char receivedFilename[FILENAME_LEN];  // buffer for filename in packet
+    int receivedPacketType; 
     string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
 
     // validate size of received packet
@@ -645,24 +651,38 @@ void validatePacket(char incomingPacket[], int incomingPacketType,
     } else {
         // flush if wrong chunk number
         if (currChunkNum != SIZE_MAX) {
-            if (receivedPacketType != CC_RESPONSE_PACKET_TYPE) {
-                fprintf(stderr, "Error: should be expecting %d type but received %d type.\n", CC_RESPONSE_PACKET_TYPE, receivedPacketType);
-                exit(99);
-            }
+            validateChunkNumber(incomingPacket, currChunkNum, timeout, 
+                                numRetried, numFlushed, retryFlag);
+        }
+    }
+}
 
-            ChunkCheckResponsePacket *responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingPacket);
 
-            if (responsePacket->chunkNumber > currChunkNum) {
-                fprintf(stderr, "Expected chunk number is %ld but received later chunk %ld\n", currChunkNum, responsePacket->chunkNumber);
-                exit(99);
-            } else if (responsePacket->chunkNumber < currChunkNum) {
-                fprintf(stderr, "Expected chunk number is %ld but received earlier chunk %ld\n", currChunkNum, responsePacket->chunkNumber);
-                *timeout = true;
-                if (retryFlag) {
-                    *numRetried -= 1;
-                    *numFlushed += 1;
-                }
-            }
+// --------------------------------------------------------------------------
+//
+//                           validateChunkNumber
+//
+//  Given an incoming packet, validate that it has the correct chunk number;
+//  update status variables regarding timeout, number retried and number 
+//  flushed accordingly
+//     
+// --------------------------------------------------------------------------
+void validateChunkNumber(char incomingPacket[], size_t currChunkNum, 
+                         bool *timeout, int *numRetried, int *numFlushed, 
+                         bool retryFlag) {
+    // interpret packet as a chunk check response                           
+    ChunkCheckResponsePacket *responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingPacket);
+
+    // validate chunk number
+    if (responsePacket->chunkNumber > currChunkNum) {
+        fprintf(stderr, "Expected chunk number is %ld but received later chunk %ld\n", currChunkNum, responsePacket->chunkNumber);
+        exit(99);
+    } else if (responsePacket->chunkNumber < currChunkNum) {
+        fprintf(stderr, "Expected chunk number is %ld but received earlier chunk %ld\n", currChunkNum, responsePacket->chunkNumber);
+        *timeout = true;
+        if (retryFlag) {
+            *numRetried -= 1;
+            *numFlushed += 1;
         }
     }
 }
