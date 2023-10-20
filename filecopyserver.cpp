@@ -8,15 +8,11 @@
 //
 //          fileserver <networknastiness> <filenastiness> <targetdir>
 //
-//     The server should do its part of the end of the end-to-end check, and 
-//     inform the client. (Exactly how to split the checking between server 
-//     and client is a design decision you will have to make.)
-// 
-//     The server should acknowledge to the client, and if the client times out 
-//     waiting, it should resend the confirmation. (The confirmation is idempotent!). 
-//     Of course, that means the server needs to quietly flush any duplicate 
-//     confirmations it might get too. The client should retry several times, and if 
-//     none of those are acknowledged, it should declare the network down and give up.
+//     Server side of the file copy program. Reads incoming packets and
+//     acts accordingly. Attempts to copy incoming file data to disk.
+//
+//     NEEDSWORK -> protocol times out under network nastiness 4 and file 
+//     nastiness 5
 //
 //     References:
 //     - https://www.youtube.com/watch?v=xvFZjo5PgG0&ab_channel=Duran

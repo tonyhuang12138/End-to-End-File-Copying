@@ -8,16 +8,11 @@
 //
 //          fileclient <server> <networknastiness> <filenastiness> <srcdir>
 //
-//     The client should loop through all the filenames in the source directory 
-//     named on its command line. For each one, it should use its end-to-end 
-//     protocol to tell the server that a check is necessary.
-// 
-//     The client should then confirm to the server that it knows about the 
-//     success (or failure), at which point the server should indicate in its 
-//     output the name of the file, and whether there was success or failure. 
-//     Be sure to write your log GRADELOG entries as specified in What to put 
-//     in the grading logs. (This is the point where, in later versions, the 
-//     server will either rename or delete the file).
+//     Client side of the file copy program. Attempts to transfer all files from
+//     <srcdir> to server.
+//
+//     NEEDSWORK -> protocol times out under network nastiness 4 and file 
+//     nastiness 5
 //
 //     References:
 //     - https://stackoverflow.com/questions/306533/
