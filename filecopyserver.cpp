@@ -73,7 +73,8 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
 void sendFinishPacket(C150DgmSocket *sock, char filename[]);
 
 // utility functions
-bool validatePacket(char incomingPacket[], char filename[], int readlen);
+bool validatePacket(char incomingPacket[], char filename[], int packetType, 
+                    int readlen);
 
 
 const int networknastinessArg = 1;        // networknastiness is 1st arg
@@ -158,9 +159,9 @@ void receivePackets(C150DgmSocket *sock, string dirName,
         printf("Received packet of filename %s\n", incomingFilename);
 
         // validate packet invariants
-        if (!validatePacket(incomingPacket, currFilename, readlen)) continue;
-
         packetType = getPacketType(incomingPacket);
+        if (!validatePacket(incomingPacket, currFilename, packetType, readlen)) continue;
+        
         switch (packetType) {
             case BEGIN_REQUEST_PACKET_TYPE:
                 printf(" * * * Begin request packet received. * * * \n");
@@ -260,7 +261,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                 // reset state variables
                 printf("VERIFY: filename reset from %s ", currFilename);
-                strcpy(currFilename, "");
+                // strcpy(currFilename, "");
                 printf("to %s\n", currFilename);
                 if (fileBuffer != NULL) {
                     cout << "Freeing" << endl;
@@ -529,7 +530,8 @@ void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
 //  file and has the correct packet type
 //     
 // --------------------------------------------------------------------------
-bool validatePacket(char incomingPacket[], char filename[], int readlen) {
+bool validatePacket(char incomingPacket[], char filename[], int packetType, 
+                    int readlen) {
     assert(filename != NULL);
     assert(incomingPacket != NULL);
 
@@ -539,10 +541,9 @@ bool validatePacket(char incomingPacket[], char filename[], int readlen) {
     printf("Validating packet...\n");
 
     // validate size of received packet
-    if (readlen == 0) {
-        // fprintf(stderr, "Read zero length message, trying again");
-        return false;
-    }
+    if (readlen == 0) return false;
+
+    if (packetType == BEGIN_REQUEST_PACKET_TYPE) return true;
 
     // validate filename
     getFilename(incomingPacket, receivedFilename);

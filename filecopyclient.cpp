@@ -395,8 +395,6 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
 
         responsePacket = reinterpret_cast<ChunkCheckResponsePacket *>(incomingResponsePacket);
 
-        *GRADING << "Resend packets num retried is " << numRetried << "\n";
-
         // check which packets have failed
         for (int i = 0; i < responsePacket->numPacketsInChunk; i++) {
             if (responsePacket->chunkCheck[i] == false) {
@@ -411,8 +409,6 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
 
         // send chunk check request
         sendAndRetry(sock, responsePacket->filename, outgoingRequestPacket, incomingResponsePacket, CC_REQUEST_PACKET_TYPE, CC_RESPONSE_PACKET_TYPE, responsePacket->chunkNumber);
-
-        *GRADING << "Keep looping condition is " << (firstRead || (failedPackets.size() > 0 && numRetried < MAX_RESENDS)) << endl;
     }
 
     if (numRetried == MAX_RESENDS) {
