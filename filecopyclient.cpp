@@ -135,8 +135,10 @@ int main(int argc, char *argv[]) {
             exit(8);
         }
 
-        char incomingResponsePacket[MAX_PACKET_LEN];
-        bool transferSuccess = false;
+        char incomingResponsePacket[MAX_PACKET_LEN];     // buffer that stores 
+                                                         // incoming response
+        bool transferSuccess = false;                    // indicates if retry 
+                                                         // is necessary
         int numRetried = 0;
         char path[500];
 
@@ -186,7 +188,8 @@ int main(int argc, char *argv[]) {
 // ------------------------------------------------------
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness, int attempt) {
-    size_t fileSize, numTotalPackets, numTotalChunks, numPacketsInChunk, currChunkNum = 0;
+    size_t fileSize, numTotalPackets, numTotalChunks, numPacketsInChunk, 
+           currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
 
     // send a begin packet to server to notify it to receive a new file
@@ -224,6 +227,7 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
     
     *GRADING << "File: " << filename << ", beginning transmission, attempt " << attempt << endl;
 
+    // buffers for outgoing request and incoming response
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
 
@@ -245,7 +249,8 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
 //
 //                                sendChunk
 //  Given a filename and a chunk number, keep sending untill all packets in
-//  chunk are delivered, or give up after MAX_CHUNK_RETRIES attempts
+//  chunk are delivered, or give up after MAX_CHUNK_RETRIES attempts. Chunk
+//  here means a collection of CHUNK_SIZE packets
 //     
 // --------------------------------------------------------------------------
 void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
@@ -253,13 +258,15 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
                int numPacketsInChunk) {
     assert(sock != NULL);
 
-    char *outgoingDataPacket;
-    vector<char *> chunk;
+    vector<char *> chunk;           // stores all packets of the chunk
+    char *outgoingDataPacket;       // current data packet holder
+
+    // buffers for outgoing request and incoming response
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
     ChunkCheckRequestPacket requestPacket;
 
-    // send chunk to server
+    // send all packets in chunk to server
     for (int i = 0; i < numPacketsInChunk; i++) {
         outgoingDataPacket = sendDataPacket(sock, filename, dirName, 
                                             filenastiness, currChunkNum, i);
@@ -331,7 +338,9 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
 unsigned char *findMostFrequentData(string sourceName, size_t offset, 
                                     size_t readAmount, int filenastiness) {
     unsigned char *dataBuffer = (unsigned char *) malloc(readAmount);
-    unsigned char *extractedData;
+    unsigned char *extractedData;  // current data holder pointer
+    
+    // keep track of how many times each variation had appeared
     unordered_map<string, int> frequencyCount;
     int currentMax = 0;
     string mode;
@@ -412,9 +421,9 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
                         char outgoingRequestPacket[], vector<char *> chunk,
                         size_t numTotalChunks) {
     ChunkCheckResponsePacket *responsePacket;
-    vector<int> failedPackets;
-    bool firstRead = true;
+    vector<int> failedPackets; // record all packets that need to be redelivered
     int numRetried = 0;
+    bool firstRead = true;  // flag for first iteration in loop
 
     // resend packets until all packets have been delivered or out of resends
     while (firstRead || (failedPackets.size() > 0 && numRetried < MAX_CHUNK_RETRIES)) {
@@ -462,7 +471,7 @@ void sendChecksumRequest(C150DgmSocket *sock, char filename[],
     assert(sock != NULL);
     assert(filename != NULL);
     
-    char outgoingRequestPacket[MAX_PACKET_LEN];
+    char outgoingRequestPacket[MAX_PACKET_LEN];  // buffer for outgoing request
     ChecksumRequestPacket requestPacket;
 
     // load struct with members and write to packet
@@ -489,10 +498,12 @@ bool sendChecksumConfirmation(C150DgmSocket *sock, char filename[],
     assert(sock != NULL);
     assert(filename != NULL);
 
-    bool transferSuccess;
+    // buffers for outgoing request and incoming request
     char outgoingComparisonPacket[MAX_PACKET_LEN];
     char incomingFinishPacket[MAX_PACKET_LEN];
     ChecksumComparisonPacket comparisonPacket;
+    
+    bool transferSuccess; // flag for if file needs to be resent
 
     // load struct with members and write to packet
     transferSuccess = comparisonPacket.comparisonResult = compareHash(filename, dirName, filenastiness, incomingResponsePacket, attempt);
@@ -602,7 +613,7 @@ void validatePacket(char incomingPacket[], int incomingPacketType,
                     int *numRetried, int *numFlushed, bool retryFlag,
                     size_t currChunkNum) {
     char receivedFilename[FILENAME_LEN];
-    int receivedPacketType;   
+    int receivedPacketType;  
     string expectedIncomingType = packetTypeStringMatch(incomingPacketType);
 
     // validate size of received packet
