@@ -128,17 +128,21 @@ int main(int argc, char *argv[])  {
 
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness) {
-    char incomingPacket[MAX_PACKET_LEN];   // received message data
-    char currFilename[FILENAME_LEN] = "";
-    char incomingFilename[FILENAME_LEN];
-    ssize_t readlen, fileSize, numTotalPackets, numTotalChunks;
-    int packetType;
-    size_t currChunkNum = 0;
-    bool bytemap[CHUNK_SIZE] = {0}; // for current chunk
-    unsigned char *fileBuffer;
-    bool startOfFile = true;
+    // variables that keep track of the current state of the server
+    char incomingPacket[MAX_PACKET_LEN];   // buffer for message data
+    char incomingFilename[FILENAME_LEN];   // buffer for message filename
+    int packetType;                        // packet type of message
+    ssize_t readlen, fileSize;             // curr file info
+    size_t currChunkNum = 0;               // chunk being currently processed
+    char currFilename[FILENAME_LEN] = "";  // file being currently processed
+    bool bytemap[CHUNK_SIZE] = {0}; // receive status of packets of currently 
+                                    // processing file
+    unsigned char *fileBuffer;      // buffer for currently reading file
+    bool startOfFile = true;        // flag to prevent reinitiating file
 
-    BeginRequestPacket *requestPacketPacket;
+    // buffers from different packet types; interpreted in advance to check 
+    // chunk number
+    BeginRequestPacket *requestPacketPacket;  
     DataPacket *dataPacket;
     ChunkCheckRequestPacket *requestPacket;
     
@@ -160,15 +164,13 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 if (startOfFile) {
                     strcpy(currFilename, incomingFilename);
                     fileSize = requestPacketPacket->fileSize;
-                    numTotalPackets = requestPacketPacket->numTotalPackets;
-                    numTotalChunks = requestPacketPacket->numTotalChunks;
                     fileBuffer = (unsigned char *) malloc(fileSize + 1);
                     startOfFile = false;
                     currChunkNum = 0;
                     memset(bytemap, 0, CHUNK_SIZE);
-
-                    *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
                 }
+
+                // notify client that server is ready for file transfer
                 sendBeginResponse(sock, currFilename);
                 break;
 
@@ -245,6 +247,7 @@ void sendBeginResponse(C150DgmSocket *sock, char filename[]) {
     assert(sock != NULL);
     assert(filename != NULL);
 
+    // buffers for outgoing request and incoming request
     char outgoingResponsePacket[MAX_PACKET_LEN];
     BeginResponsePacket responsePacket;
 
@@ -280,6 +283,7 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     size_t writeAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
     memcpy(fileBuffer + offset, dataPacket->data, writeAmount);
 
+    // mark packet as delivered
     bytemap[dataPacket->packetNumber] = true;
 }
 
@@ -298,6 +302,7 @@ void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     assert(bytemap != NULL);
     assert(requestPacket != NULL);
 
+    // buffers for outgoing request and incoming request
     char outgoingResponsePacket[MAX_PACKET_LEN];
     char chunkCheck[CHUNK_SIZE]; 
     ChunkCheckResponsePacket responsePacket;
@@ -327,7 +332,7 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
     assert(sock != NULL);
     assert(filename != NULL);
 
-    char outgoingResponsePacket[MAX_PACKET_LEN];
+    char outgoingResponsePacket[MAX_PACKET_LEN]; // buffer for outgoing request
     ChecksumResponsePacket responsePacket;
     unsigned char *checksum;
 
@@ -364,11 +369,13 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
     // flush message if buffer was already freed
     if (fileBuffer == NULL) return;
 
-    NASTYFILE outputFile(filenastiness);
-    void *fopenretval;
+    // file IO variables
+    NASTYFILE outputFile(filenastiness); // constructs a new file pointer
+    void *fopenretval;                   // 
     size_t writeLen, readLen;
     int numRetried = 0;
-    unsigned char *diskread = NULL;
+    unsigned char *diskread = NULL;      // buffer for reading data that was 
+                                         // just wrote
     (void) fopenretval;
 
     // generate filename for temporary file
@@ -376,8 +383,10 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
     tempFilename += "-TMP";
     string outputpath = makeFileName(dirName, tempFilename);
 
-    // write a few more times if data was not correctly written
-    while (diskread == NULL || ((writeLen != fileSize || readLen != fileSize || memcmp(fileBuffer, diskread, fileSize) != 0) && numRetried < MAX_RETRIES)) {
+    // write up to MAX_RETRIES times if data was not correctly written
+    while (diskread == NULL || ((writeLen != fileSize || readLen != fileSize 
+           || memcmp(fileBuffer, diskread, fileSize) != 0) 
+           && numRetried < MAX_RETRIES)) {
         numRetried++;
         
         // reset diskread pointer
@@ -393,6 +402,7 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
         // retry if write error
         if (writeLen != fileSize || outputFile.fclose() != 0) continue;
     
+        // read data that was just wrote to file
         diskread = bufferFile(dirName.c_str(), tempFilename, filenastiness, 
                               &readLen);
 
@@ -400,7 +410,9 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
         if (readLen != fileSize) continue;
     }
 
-    if (numRetried == MAX_RETRIES) fprintf(stderr, "WRITE FAILED: %s after %d tries.\n", filename, numRetried);
+    if (numRetried == MAX_RETRIES) {
+        fprintf(stderr, "WRITE FAILED: %s after %d tries.\n", filename, numRetried);
+    }
 
     free(diskread);
 }
@@ -419,17 +431,15 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
     assert(filename != NULL);
     assert(incomingPacket != NULL);
     
+    // interpreting incoming packet
     ChecksumComparisonPacket *comparisonPacket = reinterpret_cast<ChecksumComparisonPacket *>(incomingPacket);
 
     // generate filename for temporary file
     string fullPath = makeFileName(dirName, filename);
     string tempFullPath = fullPath + "-TMP";
 
-    if (strcmp((char *) filename, comparisonPacket->filename) != 0){
-        cout << memcmp((char *) filename, comparisonPacket->filename, FILENAME_LEN);
-        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, comparisonPacket->filename);
-        return;
-    }
+    // flush if wrong file
+    if (strcmp((char *) filename, comparisonPacket->filename) != 0) return;
 
     // check if file transfer was successful
     if (comparisonPacket->comparisonResult) {  // rename
@@ -437,18 +447,14 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
 
         // check if rename success
         if (rename(tempFullPath.c_str(), fullPath.c_str()) != 0) {
-            fprintf(stderr, "Error renaming file %s to %s\n", tempFullPath.c_str(), fullPath.c_str());
-        } else {
-            cout << "File renamed successfully" << endl;
-        }
+            fprintf(stderr, "Error renaming file %s to %s\n", 
+                    tempFullPath.c_str(), fullPath.c_str());
+        } 
     } else {                                    // remove
         *GRADING << "File: " << filename << " end-to-end check failed" << endl;                    
 
         if (remove(tempFullPath.c_str()) != 0) {
             fprintf(stderr, "Unable to remove the file\n");
-
-        } else {
-            printf("File removed successfully\n");
         }
     }
 }
@@ -465,6 +471,7 @@ void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     assert(sock != NULL);
     assert(filename != NULL);
     
+    // buffer for outgoing request
     char outgoingFinishPacket[MAX_PACKET_LEN];
     FinishPacket finishPacket;
 
@@ -489,7 +496,7 @@ bool validatePacket(char incomingPacket[], char filename[], int packetType,
                     int readlen) {
     assert(filename != NULL);
     assert(incomingPacket != NULL);
-
+    
     char receivedFilename[FILENAME_LEN];
     int receivedPacketType;   
 

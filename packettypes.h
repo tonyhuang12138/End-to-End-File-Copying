@@ -16,9 +16,8 @@
 #define MAX_PACKET_LEN 512
 #define PACKET_TYPE_LEN 4
 #define FILENAME_LEN 50
-#define DATA_LEN 440 // 512 - 4 - 50 - 8 - 4 (and padding)
-
-#define CHUNK_SIZE 440
+#define DATA_LEN 440 // all bytes remaining in the data packet
+#define CHUNK_SIZE 440 // all bytes remaining in the chunk check request packet
 
 // client to server
 struct BeginRequestPacket {
@@ -38,7 +37,6 @@ struct BeginResponsePacket {
 // client to server
 struct DataPacket {
     const int packetType = 2;
-    // investigate safety hazard: when buffer size is 1 it still worked; why didn't it overflow?
     char filename[FILENAME_LEN]; 
     size_t chunkNumber;
     int packetNumber;
@@ -58,7 +56,7 @@ struct ChunkCheckResponsePacket {
     const int packetType = 4;
     char filename[FILENAME_LEN]; 
     size_t chunkNumber;
-    int numPacketsInChunk; // only check numPacketsInChunk packets
+    int numPacketsInChunk;
     bool chunkCheck[CHUNK_SIZE]; 
 };
 

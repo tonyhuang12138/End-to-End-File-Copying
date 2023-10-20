@@ -1,18 +1,15 @@
 // 
-//            sha1tstFIXED
+//            nastyfileio.cpp
 //
-//     Author: Noah Mendelsohn
+//     Author: Noah Mendelsohn, Tony Huang and Bill Liu
 //
-//     Test programming showing use of computation of 
-//     sha1 hash function.
+//     Utility functions that interact with NASTY file IO
 //
-//     NOTE: problems were discovered using the incremental
-//     version of the computation with SHA1_Update. This 
-//     version, which computes the entire checksum at once,
-//     seems to be reliable (if less flexible).
+//     References:
+//     - https://stackoverflow.com/questions/9370945/
+//       finding-the-max-value-in-a-map
 //
-//     Note: this must be linked with the g++ -lssl directive. 
-//
+
 
 #include "c150nastyfile.h"        // for c150nastyfile & framework
 #include <string>
@@ -31,14 +28,14 @@
 using namespace std;
 using namespace C150NETWORK;
 
-// ------------------------------------------------------
+
+// --------------------------------------------------------------------------
 //
-//                   getPacketType
+//                           getPacketType
 //
-//  Given an incoming packet, extract and return the 
-//  packet type
+//  Given an incoming packet, extract and return the packet type
 //     
-// ------------------------------------------------------
+// --------------------------------------------------------------------------
 int getPacketType(char incomingPacket[]) {
     int packetType;
     memcpy(&packetType, incomingPacket, sizeof(int));
@@ -46,6 +43,7 @@ int getPacketType(char incomingPacket[]) {
     
     return packetType;
 }
+
 
 // --------------------------------------------------------------------------
 //
@@ -91,10 +89,19 @@ string packetTypeStringMatch(int packetType) {
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                            findMostFrequentSHA
+//  Given the name of a file, sample its SHA1 MAX_SAMPLES times and return 
+//  the most frequently appearing sample
+//     
+// --------------------------------------------------------------------------
 unsigned char *findMostFrequentSHA(string filename, string dirName, 
                                    int filenastiness) {
     unsigned char *shaBuffer = (unsigned char *) malloc(HASH_CODE_LENGTH);
     unsigned char *checksum;
+
+    // keep track of how many times each variation had appeared
     unordered_map<string, int> frequencyCount;
     int currentMax = 0;
     string mode;
@@ -111,22 +118,14 @@ unsigned char *findMostFrequentSHA(string filename, string dirName,
         free(checksum);
     }
 
-    // find mode (see references)
+    // find mode (see references) and copy to buffer
     for (auto it = frequencyCount.cbegin(); it != frequencyCount.cend(); ++it) {
         if (it ->second > currentMax) {
             mode = it->first;
             currentMax = it->second;
         }
     }
-
-    printf ("SHA1 MODE (\"%s\") = ", filename.c_str());
-
-    for (int i = 0; i < 20; i++)
-    {
-      printf ("%02x", (unsigned int) mode[i]);
-    }
-    printf ("appears %d times\n", currentMax);
-
+    
     memcpy(shaBuffer, mode.data(), HASH_CODE_LENGTH);
 
     return shaBuffer;
@@ -142,7 +141,6 @@ unsigned char *findMostFrequentSHA(string filename, string dirName,
 // ------------------------------------------------------
 void getFilename(char incomingPacket[], char filename[]) {
     strcpy(filename, incomingPacket + PACKET_TYPE_LEN);
-    // printf("Getting filename: %s\n", filename);
 }
 
 
@@ -195,18 +193,18 @@ bool isDirectory(char *dirname) {
 //     
 // ------------------------------------------------------
 bool isFile(string fname) {
-  const char *filename = fname.c_str();
-  struct stat statbuf;  
-  if (lstat(filename, &statbuf) != 0) {
+    const char *filename = fname.c_str();
+    struct stat statbuf;  
+    if (lstat(filename, &statbuf) != 0) {
     fprintf(stderr,"isFile: Error stating supplied source file %s\n", filename);
     return false;
-  }
+    }
 
-  if (!S_ISREG(statbuf.st_mode)) {
+    if (!S_ISREG(statbuf.st_mode)) {
     fprintf(stderr,"isFile: %s exists but is not a regular file\n", filename);
     return false;
-  }
-  return true;
+    }
+    return true;
 }
 
 // ------------------------------------------------------
@@ -217,17 +215,15 @@ bool isFile(string fname) {
 // sure there's a / in between
 //
 // ------------------------------------------------------
-
 string makeFileName(string dir, string name) {
-  stringstream ss;
+    stringstream ss;
 
-  ss << dir;
-  // make sure dir name ends in /
-  if (dir.substr(dir.length()-1,1) != "/")
+    ss << dir;
+    // make sure dir name ends in /
+    if (dir.substr(dir.length()-1,1) != "/")
     ss << '/';
-  ss << name;     // append file name to dir
-  return ss.str();  // return dir/name
-  
+    ss << name;     // append file name to dir
+    return ss.str();  // return dir/name
 }
 
 // ------------------------------------------------------
@@ -238,38 +234,37 @@ string makeFileName(string dir, string name) {
 // return it
 //
 // ------------------------------------------------------
-
 unsigned char *bufferFile(string sourceDir, string fileName, int nastiness, 
                           size_t *filesize) {
-  //
-  //  Misc variables, mostly for return codes
-  //
-  void *fopenretval;
-  size_t len;
-  string errorString;
-  unsigned char *buffer;
-  struct stat statbuf;  
-  size_t sourceSize;
+    //
+    //  Misc variables, mostly for return codes
+    //
+    void *fopenretval;
+    size_t len;
+    string errorString;
+    unsigned char *buffer;
+    struct stat statbuf;  
+    size_t sourceSize;
 
-  //
-  // Put together directory and filenames SRC/file TARGET/file
-  //
-  string sourceName = makeFileName(sourceDir, fileName);
+    //
+    // Put together directory and filenames SRC/file TARGET/file
+    //
+    string sourceName = makeFileName(sourceDir, fileName);
 
-  //
-  // make sure the file we're copying is not a directory
-  // 
-  printf("Copying %s to buffer\n", fileName.c_str());
-  if (!isFile(sourceName)) {
-    cerr << "Input file " << sourceName << " is a directory or other non-regular file. Skipping" << endl;
-    return NULL;
-  }
+    //
+    // make sure the file we're copying is not a directory
+    // 
+    printf("Copying %s to buffer\n", fileName.c_str());
+    if (!isFile(sourceName)) {
+        cerr << "Input file " << sourceName << " is a directory or other non-regular file. Skipping" << endl;
+        return NULL;
+    }
 
-  try {
+    try {
     // read whole input file 
     if (lstat(sourceName.c_str(), &statbuf) != 0) {
-      fprintf(stderr,"copyFile: Error stating supplied source file %s\n", sourceName.c_str());
-      exit(20);
+        fprintf(stderr,"copyFile: Error stating supplied source file %s\n", sourceName.c_str());
+        exit(20);
     }
 
     // make an input buffer large enough for the whole file
@@ -280,36 +275,36 @@ unsigned char *bufferFile(string sourceDir, string fileName, int nastiness,
 
     // do an fopen on the input file
     fopenretval = inputFile.fopen(sourceName.c_str(), "rb");  
-                                          // wraps Unix fopen
-                                          // Note rb gives "read, binary"
-                                          // which avoids line end munging
+                                            // wraps Unix fopen
+                                            // Note rb gives "read, binary"
+                                            // which avoids line end munging
 
     if (fopenretval == NULL) {
-      cerr << "Error opening input file " << sourceName << 
+        cerr << "Error opening input file " << sourceName << 
         " errno=" << strerror(errno) << endl;
-      exit(12);
+        exit(12);
     }
 
     // read the whole file
     len = inputFile.fread(buffer, 1, sourceSize);
     if (len != sourceSize) {
-      cerr << "Expected size " << sourceSize << " but read size " << len << endl;
-      cerr << "Error reading file " << sourceName << 
+        cerr << "Expected size " << sourceSize << " but read size " << len << endl;
+        cerr << "Error reading file " << sourceName << 
         "  errno=" << strerror(errno) << endl;
-      exit(16);
+        exit(16);
     }
 
     if (inputFile.fclose() != 0 ) {
-      cerr << "Error closing input file " << sourceName << 
+        cerr << "Error closing input file " << sourceName << 
         " errno=" << strerror(errno) << endl;
-      exit(16);
+        exit(16);
     }
 
-  } catch (C150Exception& e) {
-      cerr << "nastyfiletest:bufferFile(): Caught C150Exception: " << 
+    } catch (C150Exception& e) {
+        cerr << "nastyfiletest:bufferFile(): Caught C150Exception: " << 
         e.formattedExplanation() << endl;
-  }
-  *filesize = len;
+    }
+    *filesize = len;
 
-  return buffer;
+    return buffer;
 }
