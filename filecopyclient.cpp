@@ -89,6 +89,8 @@ bool sendChecksumConfirmation(C150DgmSocket *sock, char filename[],
                               char incomingResponsePacket[]);
 bool compareHash(char filename[], string dirName, int filenastiness, 
                  char incomingResponsePacket[], int attempt);
+
+// utility functions
 void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
                   char incomingPacket[], int outgoingPacketType, 
                   int incomingPacketType, size_t currChunkNum);
@@ -116,7 +118,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    // reading nastiness from input
+    // read nastiness from input
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
 
@@ -179,7 +181,7 @@ int main(int argc, char *argv[]) {
 //
 //                   copyFile
 //
-//  Given a filename, copy it to server
+//  Given a filename, copy it to the server
 //     
 // ------------------------------------------------------
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
@@ -191,8 +193,6 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, 
                      &numTotalPackets, attempt, &numTotalChunks, 
                      &numPacketsInLastChunk);
-
-    printf("Verifying: %s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
     
     // keep sending while there are more chunks left
     while (currChunkNum < numTotalChunks) {
@@ -204,11 +204,18 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
 
         currChunkNum++;
     }
-
-    printf("%s copied to server.\n", filename.c_str());
 }
 
 
+/* --------------------------FILE COPY FUNCTIONS--------------------------- */
+
+// --------------------------------------------------------------------------
+//
+//                            sendBeginRequest
+//  Given a filename, calculate the file's stats and notify the server to
+//  receive the file
+//     
+// --------------------------------------------------------------------------
 void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
                       size_t *fileSize, size_t *numTotalPackets, int attempt,
                       size_t *numTotalChunks, int *numPacketsInLastChunk) {
@@ -234,6 +241,13 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                                sendChunk
+//  Given a filename and a chunk number, keep sending untill all packets in
+//  chunk are delivered, or give up after MAX_CHUNK_RETRIES attempts
+//     
+// --------------------------------------------------------------------------
 void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
                int filenastiness, size_t numTotalChunks, size_t currChunkNum, 
                int numPacketsInChunk) {
@@ -269,9 +283,17 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                                sendDataPacket
+//  Given the identifier/location of a particular packet, extract it from
+//  file and send to server
+//     
+// --------------------------------------------------------------------------
 char *sendDataPacket(C150DgmSocket *sock, string filename, 
                               string dirName, int filenastiness, 
                               size_t currChunkNum, int currPacketNum) {
+    // allocate memory to store data packet
     char *outgoingDataPacket = (char *) malloc(sizeof(DataPacket));
 
     // calculating data location
@@ -299,6 +321,13 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                            findMostFrequentData
+//  Given the identifier/location of a particular packet, sample it from file
+//  MAX_DATA_SAMPLES times and return the most frequently appearing sample
+//     
+// --------------------------------------------------------------------------
 unsigned char *findMostFrequentData(string sourceName, size_t offset, 
                                     size_t readAmount, int filenastiness) {
     unsigned char *dataBuffer = (unsigned char *) malloc(readAmount);
@@ -316,14 +345,13 @@ unsigned char *findMostFrequentData(string sourceName, size_t offset,
         free(extractedData);
     }
 
-    // find mode (see references)
+    // find mode (see references) and copy to buffer
     for (auto it = frequencyCount.cbegin(); it != frequencyCount.cend(); ++it) {
         if (it ->second > currentMax) {
             mode = it->first;
             currentMax = it->second;
         }
     }
-    std::cout << "DATA MODE: " << mode << " appears " << currentMax << " times\n";
 
     memcpy(dataBuffer, mode.data(), readAmount);
 
@@ -331,6 +359,12 @@ unsigned char *findMostFrequentData(string sourceName, size_t offset,
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                            extractDataFromFile
+//  Given the identifier/location of a particular packet, extract it from file
+//     
+// --------------------------------------------------------------------------
 unsigned char *extractDataFromFile(string sourceName, size_t offset, 
                                    size_t readAmount, int filenastiness) {
     NASTYFILE inputFile(filenastiness);
@@ -345,13 +379,10 @@ unsigned char *extractDataFromFile(string sourceName, size_t offset,
         " errno=" << strerror(errno) << endl;
       exit(12);
     }
-    printf("File read succeeded\n");
-    printf("Offset is %ld\n", offset);
-    printf("About to read\n");
+    
     inputFile.fseek(offset, SEEK_SET);
 
     // read DATA_LEN bytes of data
-    printf("Read amount is %ld\n", readAmount);
     len = inputFile.fread(buffer, 1, readAmount);
     if (len != readAmount) {
       cerr << "Error reading file " << sourceName << 
@@ -359,6 +390,7 @@ unsigned char *extractDataFromFile(string sourceName, size_t offset,
       exit(16);
     }
 
+    // close file
     if (inputFile.fclose() != 0 ) {
       cerr << "Error closing input file " << sourceName << 
         " errno=" << strerror(errno) << endl;
@@ -369,6 +401,13 @@ unsigned char *extractDataFromFile(string sourceName, size_t offset,
 }
 
 
+// --------------------------------------------------------------------------
+//
+//                            resendFailedPackets
+//  Resend all failed packets in chunk to server until all succeed or 
+//  give up after MAX_CHUNK_RETRIES attempts
+//     
+// --------------------------------------------------------------------------
 void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[], 
                         char outgoingRequestPacket[], vector<char *> chunk,
                         size_t numTotalChunks) {
@@ -377,6 +416,7 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
     bool firstRead = true;
     int numRetried = 0;
 
+    // resend packets until all packets have been delivered or out of resends
     while (firstRead || (failedPackets.size() > 0 && numRetried < MAX_CHUNK_RETRIES)) {
         // reset state variables
         numRetried++;
@@ -406,13 +446,15 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
     }
 }
 
+
 /* --------------------------END TO END FUNCTIONS--------------------------- */
 
 // --------------------------------------------------------------------------
 //
 //                           sendChecksumRequest
-//
-//  
+//  Given a filename, assuming that the file had been delievered, send a 
+//  checksum request to server and expect a response containing checksum
+//  calculated on the server-side copy of the file
 //     
 // --------------------------------------------------------------------------
 void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
@@ -433,7 +475,14 @@ void sendChecksumRequest(C150DgmSocket *sock, char filename[],
     sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, CS_REQUEST_PACKET_TYPE, CS_RESPONSE_PACKET_TYPE, SIZE_MAX);
 }
 
-
+// --------------------------------------------------------------------------
+//
+//                           sendChecksumConfirmation
+//  After receiving a checksum response from server, calculate checksum for
+//  the local file and send the comparison result between local and server-
+//  side checksums
+//     
+// --------------------------------------------------------------------------
 bool sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
                               string dirName, int filenastiness, int attempt,
                               char incomingResponsePacket[]) {
@@ -474,29 +523,11 @@ bool compareHash(char filename[], string dirName, int filenastiness,
     unsigned char *localChecksum;
     ChecksumResponsePacket *responsePacket = reinterpret_cast<ChecksumResponsePacket *>(incomingResponsePacket);
 
-    // check if the filename matches with current file
-    if (strcmp(filename, responsePacket->filename) != 0){
-        cout << memcmp(filename, responsePacket->filename, FILENAME_LEN);
-        fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, responsePacket->filename);
-        return false;
-    }
+    // flush if wrong file
+    if (strcmp(filename, responsePacket->filename) != 0) return false;
         
     // compute local checksum
     localChecksum = findMostFrequentSHA(filename, dirName, filenastiness);
-
-    printf("Printing local checksum: ");
-    for (int i = 0; i < 20; i++)
-    {
-        printf ("%02x", (unsigned int) localChecksum[i]);
-    }
-    printf ("\n");
-
-    printf("Printing received checksum: ");
-    for (int i = 0; i < 20; i++)
-    {
-        printf ("%02x", (unsigned int) responsePacket->checksum[i]);
-    }
-    printf ("\n");
 
     // compare checksums
     if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
@@ -510,14 +541,16 @@ bool compareHash(char filename[], string dirName, int filenastiness,
     free(localChecksum);
 }
 
+
 /* ----------------------------UTILITY FUNCTIONS---------------------------- */
 
 // --------------------------------------------------------------------------
 //
-//                           sendAndRetry
+//                              sendAndRetry
 //
-//  Given a packet, send and expect a response. If response is not received,
-//  retry up to five times before aborting on network failure.
+//  Given a request packet, send and expect a response. If response is not 
+//  received, retry up to MAX_PKT_RETRIES times before aborting on network 
+//  failure.
 //     
 // --------------------------------------------------------------------------
 void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
@@ -554,8 +587,6 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     // throw exception if all retries exceeded
     string errorMsg = "Timed out after " + to_string(MAX_PKT_RETRIES) + " retries.";
     if (numRetried == MAX_PKT_RETRIES) throw C150NetworkException(errorMsg);
-
-    printf("RECEIVED packet of file %s and type %s", filename, packetTypeStringMatch(incomingPacketType).c_str());
 }
 
 // --------------------------------------------------------------------------
@@ -601,7 +632,7 @@ void validatePacket(char incomingPacket[], int incomingPacketType,
             *numFlushed += 1;
         }
     } else {
-        // check if the chunk number is right
+        // flush if wrong chunk number
         if (currChunkNum != SIZE_MAX) {
             if (receivedPacketType != CC_RESPONSE_PACKET_TYPE) {
                 fprintf(stderr, "Error: should be expecting %d type but received %d type.\n", CC_RESPONSE_PACKET_TYPE, receivedPacketType);
