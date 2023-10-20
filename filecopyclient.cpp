@@ -181,7 +181,7 @@ int main(int argc, char *argv[]) {
 // ------------------------------------------------------
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
               int filenastiness, int attempt) {
-    size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
+    size_t fileSize, numTotalPackets, numTotalChunks, numPacketsInChunk, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
 
     sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, 
@@ -192,16 +192,13 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     
     // keep sending while there are more chunks left
     while (currChunkNum < numTotalChunks) {
-        printf("Getting chunk %ld\n", currChunkNum);
-        if (currChunkNum == numTotalChunks - 1) {
-            printf("Processing last chunk with %d packets\n", numPacketsInLastChunk);
-            // extract data from file and send to server as packets
-            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInLastChunk);
-        } else {
-            sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, CHUNK_SIZE);
-        }
-
         currChunkNum++;
+
+        // check if current chunk is last chunk
+        numPacketsInChunk = currChunkNum == numTotalChunks ? 
+                                            numPacketsInLastChunk : CHUNK_SIZE;
+
+        sendChunk(sock, filename, dirName, filenastiness, numTotalChunks, currChunkNum, numPacketsInChunk);
     }
 
     printf("%s copied to server.\n", filename.c_str());
@@ -219,19 +216,16 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
 
-    // generating request packet
+    // load struct with members and write to packet
     BeginRequestPacket requestPacket;
     requestPacket.fileSize = *fileSize = getFileSize(filename, dirName);
-    // see references up top
-    requestPacket.numTotalPackets = *numTotalPackets = (*fileSize + DATA_LEN - 1) / DATA_LEN; 
+    requestPacket.numTotalPackets = *numTotalPackets = (*fileSize + DATA_LEN - 1) / DATA_LEN; // see references up top
     requestPacket.numTotalChunks = *numTotalChunks = (*numTotalPackets + CHUNK_SIZE - 1) / CHUNK_SIZE;
     *numPacketsInLastChunk = *numTotalPackets % CHUNK_SIZE == 0 ? CHUNK_SIZE : *numTotalPackets % CHUNK_SIZE;
     memcpy(requestPacket.filename, filename, strlen(filename) + 1);
     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
 
-    printf("%s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename, *fileSize, *numTotalPackets, *numTotalChunks, *numPacketsInLastChunk);
-    printf("Begin request packet for %s generated\n", requestPacket.filename);
-
+    // send begin request and wait for response
     sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, BEGIN_REQUEST_PACKET_TYPE, BEGIN_RESPONSE_PACKET_TYPE, SIZE_MAX);
 }
 
@@ -240,26 +234,21 @@ void sendChunk(C150DgmSocket *sock, string filename, string dirName,
                int filenastiness, size_t numTotalChunks, size_t currChunkNum, 
                int numPacketsInChunk) {
     assert(sock != NULL);
+
     char *outgoingDataPacket;
     vector<char *> chunk;
-
-    // send chunk to server
-    for (int i = 0; i < numPacketsInChunk; i++) {
-        outgoingDataPacket = sendDataPacket(sock, filename, dirName, filenastiness, currChunkNum, i);
-        cout << "Address is :" << (void*) outgoingDataPacket << endl;
-
-        DataPacket *dataPacket2 = reinterpret_cast<DataPacket *>(outgoingDataPacket);
-        printf("Tripple checking after data generation: ");
-        printf("Unpacking packet %s, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->packetNumber);
-        printf("Verifying packet type: %d\n", dataPacket2->packetType);
-        chunk.push_back(outgoingDataPacket);
-    }
-
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
     ChunkCheckRequestPacket requestPacket;
 
-    // request for chunk check
+    // send chunk to server
+    for (int i = 0; i < numPacketsInChunk; i++) {
+        outgoingDataPacket = sendDataPacket(sock, filename, dirName, 
+                                            filenastiness, currChunkNum, i);
+        chunk.push_back(outgoingDataPacket);
+    }
+
+    // load struct with members and write to packet
     requestPacket.chunkNumber = currChunkNum;
     requestPacket.numPacketsInChunk = numPacketsInChunk;
     memcpy(requestPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
