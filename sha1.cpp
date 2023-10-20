@@ -26,20 +26,22 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include "nastyfileio.h"
+#include "sha1.h"
 
 using namespace std;
 using namespace C150NETWORK;
 
 
-void sha1(string filename, string dirName, int nastiness, unsigned char* obuf) {
-	int readlen = -1;
-	unsigned char *buffer = copyFile(dirName.c_str(), filename, nastiness, &readlen);
-	if (buffer == NULL or readlen == -1) {
+unsigned char *sha1(string filename, string dirName, int nastiness) {
+	size_t readlen = SIZE_MAX;
+	unsigned char *obuf = (unsigned char *) malloc(HASH_CODE_LENGTH + 1);
+	unsigned char *buffer = bufferFile(dirName.c_str(), filename, nastiness, &readlen);
+	if (buffer == NULL or readlen == SIZE_MAX) {
 		fprintf(stderr,"Error reading file %s into buffer.\n", filename.c_str());
-    	return;
+    	return NULL;
 	}
 
-	printf("Buffer size is %d\n", readlen);
+	printf("Buffer size is %ld\n", readlen);
 	printf ("SHA1 (\"%s\") = ", filename.c_str());
 	SHA1(buffer, readlen, obuf);
 
@@ -49,4 +51,6 @@ void sha1(string filename, string dirName, int nastiness, unsigned char* obuf) {
 	}
 	printf ("\n");
 	free(buffer);
+
+	return obuf;
 }

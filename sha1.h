@@ -7,6 +7,6 @@ using namespace std;
 
 #define HASH_CODE_LENGTH 20
 
-void sha1(string filename, string dirName, int nastiness, unsigned char* obuf);
+unsigned char *sha1(string filename, string dirName, int nastiness);
 
 #endif

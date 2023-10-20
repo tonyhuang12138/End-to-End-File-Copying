@@ -90,6 +90,48 @@ string packetTypeStringMatch(int packetType) {
     }
 }
 
+
+unsigned char *findMostFrequentSHA(string filename, string dirName, 
+                                   int filenastiness) {
+    unsigned char *shaBuffer = (unsigned char *) malloc(HASH_CODE_LENGTH);
+    unsigned char *checksum;
+    unordered_map<string, int> frequencyCount;
+    int currentMax = 0;
+    string mode;
+
+    // sample sha MAX_SAMPLES times
+    for (int i = 0; i < MAX_SAMPLES; i++) {
+        checksum = sha1(filename, dirName, filenastiness);
+
+        if (checksum == NULL) continue;
+
+        string key(checksum, checksum + HASH_CODE_LENGTH);
+        frequencyCount[key]++;
+
+        free(checksum);
+    }
+
+    // find mode (see references)
+    for (auto it = frequencyCount.cbegin(); it != frequencyCount.cend(); ++it) {
+        if (it ->second > currentMax) {
+            mode = it->first;
+            currentMax = it->second;
+        }
+    }
+
+    printf ("SHA1 MODE (\"%s\") = ", filename.c_str());
+
+    for (int i = 0; i < 20; i++)
+    {
+      printf ("%02x", (unsigned int) mode[i]);
+    }
+    printf ("appears %d times\n", currentMax);
+
+    memcpy(shaBuffer, mode.data(), HASH_CODE_LENGTH);
+
+    return shaBuffer;
+}
+
 // ------------------------------------------------------
 //
 //                   getFilename
@@ -190,14 +232,15 @@ string makeFileName(string dir, string name) {
 
 // ------------------------------------------------------
 //
-//                   copyFile
+//                   bufferFile
 //
-// Copy a single file from sourcdir to target dir
+// Given a file path, load its entirety to a buffer and
+// return it
 //
 // ------------------------------------------------------
 
-unsigned char *copyFile(string sourceDir, string fileName, int nastiness, 
-                        int *filesize) {
+unsigned char *bufferFile(string sourceDir, string fileName, int nastiness, 
+                          size_t *filesize) {
   //
   //  Misc variables, mostly for return codes
   //
@@ -222,39 +265,18 @@ unsigned char *copyFile(string sourceDir, string fileName, int nastiness,
     return NULL;
   }
 
-  //   try {
-
-    //
-    // Read whole input file 
-    //
+  try {
+    // read whole input file 
     if (lstat(sourceName.c_str(), &statbuf) != 0) {
       fprintf(stderr,"copyFile: Error stating supplied source file %s\n", sourceName.c_str());
       exit(20);
     }
 
-    //
-    // Make an input buffer large enough for
-    // the whole file
-    //
+    // make an input buffer large enough for the whole file
     sourceSize = statbuf.st_size;
     buffer = (unsigned char *)malloc(sourceSize);
 
-    //
-    // Define the wrapped file descriptors
-    //
-    // All the operations on outputFile are the same
-    // ones you get documented by doing "man 3 fread", etc.
-    // except that the file descriptor arguments must
-    // be left off.
-    //
-    // Note: the NASTYFILE type is meant to be similar
-    //       to the Unix FILE type
-    //
-    NASTYFILE inputFile(nastiness);      // See c150nastyfile.h for interface
-    // NASTYFILE outputFile(nastiness);     // NASTYFILE is supposed to
-                                          // remind you of FILE
-                                          //  It's defined as: 
-                                          // typedef C150NastyFile NASTYFILE
+    NASTYFILE inputFile(nastiness);
 
     // do an fopen on the input file
     fopenretval = inputFile.fopen(sourceName.c_str(), "rb");  
@@ -268,10 +290,7 @@ unsigned char *copyFile(string sourceDir, string fileName, int nastiness,
       exit(12);
     }
 
-
-    // 
-    // Read the whole file
-    //
+    // read the whole file
     len = inputFile.fread(buffer, 1, sourceSize);
     if (len != sourceSize) {
       cerr << "Expected size " << sourceSize << " but read size " << len << endl;
@@ -286,15 +305,11 @@ unsigned char *copyFile(string sourceDir, string fileName, int nastiness,
       exit(16);
     }
 
-    //
-    // Handle any errors thrown by the file framekwork
-    //
-//   }   catch (C150Exception& e) {
-//        cerr << "nastyfiletest:copyfile(): Caught C150Exception: " << 
-// 	       e.formattedExplanation() << endl;
-    
-//   }
-    *filesize = len;
+  } catch (C150Exception& e) {
+      cerr << "nastyfiletest:bufferFile(): Caught C150Exception: " << 
+        e.formattedExplanation() << endl;
+  }
+  *filesize = len;
 
-    return buffer;
+  return buffer;
 }

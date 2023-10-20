@@ -43,7 +43,7 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-# define MAX_RETRIES 5
+# define MAX_RETRIES 10
 
 void receivePackets(C150DgmSocket *sock, string dirName,  
                     int filenastiness);
@@ -82,16 +82,16 @@ const int targetdirArg = 3;               // targetdir is 3rd arg
 
   
 int main(int argc, char *argv[])  {
+    //
+    //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
+    //
+    GRADEME(argc, argv);
+
     // validate input format
     if (argc != 4) {
         fprintf(stderr,"Correct syntax is: %s <networknastiness> <filenastiness> <targetdir>\n", argv[0]);
         exit(1);
     }
-
-    //
-    //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
-    //
-    GRADEME(argc, argv);
 
     // create file pointer with given nastiness
     int networknastiness = atoi(argv[networknastinessArg]); 
@@ -101,7 +101,6 @@ int main(int argc, char *argv[])  {
     C150DgmSocket *sock = new C150NastyDgmSocket(networknastiness);
     sock -> turnOnTimeouts(3000);
     
-
     try {
         // check if target dir exists
         DIR *SRC = opendir(argv[targetdirArg]);
@@ -113,7 +112,6 @@ int main(int argc, char *argv[])  {
 
         // receiveDataPackets(sock, argv[targetdirArg], filenastiness);
         receivePackets(sock, argv[targetdirArg], filenastiness);
-    // TODO: can the exception thrown within receiveDataPackets be caught?
     } catch (C150NetworkException& e) { 
         // Write to debug log
         c150debug->printf(C150ALWAYSLOG,"Caught C150NetworkException: %s\n",
@@ -158,10 +156,6 @@ void receivePackets(C150DgmSocket *sock, string dirName,
         // validate filename: not here!
         getFilename(incomingPacket, incomingFilename);
         printf("Received packet of filename %s\n", incomingFilename);
-        // TODO: for now
-        // if not "" and not currFilename and not in proccessedFiles
-        // -> file later in the timeline (impossible) -> abort?
-        // reset currFilename to "" after proccessing file?
 
         // validate packet invariants
         if (!validatePacket(incomingPacket, currFilename, readlen)) continue;
@@ -245,6 +239,9 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 
                 // TODO: can we have duplicates logs?
                 *GRADING << "File: " << currFilename << " received, beginning end-to-end check" << endl;
+                
+                // flush if already written and freed
+                if (fileBuffer == NULL) break;
 
                 // TODO: add if not written before
                 writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
@@ -257,7 +254,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 printf(" * * * Checksum comparison packet received. * * * \n");
 
                 // perform necessary filename checks
-                renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
+                // renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
 
@@ -315,10 +312,10 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
 
     // write to buffer
     size_t offset = (dataPacket->chunkNumber * CHUNK_SIZE + dataPacket->packetNumber) * DATA_LEN;
-    size_t packetSize = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
+    size_t writeAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
 
-    printf("OFFSET: %ld and write amount: %ld\n", offset, packetSize);
-    memcpy(fileBuffer + offset, dataPacket->data, packetSize);
+    printf("OFFSET: %ld and write amount: %ld\n", offset, writeAmount);
+    memcpy(fileBuffer + offset, dataPacket->data, writeAmount);
 
     printf("Flipping byte in byte map: %d\n", dataPacket->packetNumber);
     printf("Before flipping %d\n", bytemap[dataPacket->packetNumber]);
@@ -337,13 +334,11 @@ void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     char outgoingResponsePacket[MAX_PACKET_LEN];
     char chunkCheck[CHUNK_SIZE]; 
     ChunkCheckResponsePacket responsePacket;
-    bool allPacketsCorrect = true;
 
     // check if all packets had been delivered
     printf("In chunk check response, printing results: ");
     for (int i = 0; i < requestPacket->numPacketsInChunk; i++) {
         if (bytemap[i] != true) {
-            allPacketsCorrect = false;
             printf("Packet failed: %d\n", i);
             break;
         }
@@ -351,30 +346,16 @@ void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     }
     cout << endl;
 
-    if (allPacketsCorrect) {
-        cout << "All packets correct\n";
-    } else {
-        cout << "Not all packets correct\n";
-    }
-
-
     // set filename
     memcpy(responsePacket.filename, requestPacket->filename, strlen(requestPacket->filename) + 1);
-    cout << "strcmp " << strcmp(requestPacket->filename, responsePacket.filename) << endl;
-    cout << responsePacket.packetType << " " << responsePacket.filename << endl;
-
     memcpy(responsePacket.chunkCheck, bytemap, CHUNK_SIZE);
-
     responsePacket.chunkNumber = requestPacket->chunkNumber;
     responsePacket.numPacketsInChunk = requestPacket->numPacketsInChunk;
-
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
+    
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
 
     printf("Sent chunk check response for %s\n", responsePacket.filename);
-
-    // reset bytemap if all packets in chunk are received
-    // if (allPacketsCorrect) memset(bytemap, 0, CHUNK_SIZE);
 }
 
 // ------------------------------------------------------
@@ -394,30 +375,24 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
 
     char outgoingResponsePacket[MAX_PACKET_LEN];
     ChecksumResponsePacket responsePacket;
-    unsigned char checksum[HASH_CODE_LENGTH];
-
-    // set filename
-    memcpy(responsePacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, responsePacket.filename) << endl;
-    cout << responsePacket.packetType << " " << responsePacket.filename << endl;
-
-
+    unsigned char *checksum;
     string tempFilename = filename;
     tempFilename += "-TMP";
 
     printf("Original filename is %s, adjusted temp filename is %s\n", filename, tempFilename.c_str());
 
+    // set filename
+    memcpy(responsePacket.filename, filename, strlen(filename) + 1);
+
     cout << "Entering sha1\n";
-    sha1(tempFilename, dirName, filenastiness, checksum);
+    checksum = findMostFrequentSHA(tempFilename, dirName, filenastiness);
 
-    // TODO: +1??
     memcpy(responsePacket.checksum, checksum, HASH_CODE_LENGTH);
-
-    // TODO: remove
-    assert(memcmp(responsePacket.checksum, checksum, HASH_CODE_LENGTH) == 0);
-
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
+
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
+
+    free(checksum);
 
     printf("Checksum response package for file %s sent\n", filename);
 }
@@ -430,24 +405,45 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
 
     NASTYFILE outputFile(filenastiness);
     string outputpath = makeFileName(dirName, filename) + "-TMP";
-    void *fopenretval2 = outputFile.fopen(outputpath.c_str(), "wb");  
-    //
-    // Write the whole file
-    //
-    size_t len = outputFile.fwrite(fileBuffer, 1, fileSize);
-    if (len != fileSize) {
-      cerr << "Error writing file " << outputpath.c_str() << 
-	      "  errno=" << strerror(errno) << endl;
-      exit(16);
+    void *fopenretval;
+    size_t len;
+    int numRetried = 0;
+    unsigned char *diskread = NULL;
+    (void) fopenretval;
+
+    while (diskread == NULL || (memcmp(fileBuffer, diskread, fileSize) != 0 && numRetried < MAX_RETRIES)) {
+        numRetried++;
+
+        if (diskread != NULL) {
+            fprintf(stderr, "File write %s failed %d times\n", filename, numRetried);
+            free(diskread);
+            diskread = NULL;
+        }
+
+        fopenretval = outputFile.fopen(outputpath.c_str(), "wb");  
+    
+        // write entire file
+        len = outputFile.fwrite(fileBuffer, 1, fileSize);
+        if (len != fileSize) {
+        cerr << "Error writing file " << outputpath.c_str() << 
+            "  errno=" << strerror(errno) << endl;
+            continue;
+        }
+    
+        if (outputFile.fclose() == 0 ) {
+        cout << "Finished writing file " << outputpath.c_str() <<endl;
+        } else {
+        cerr << "Error closing output file " << outputpath.c_str() << 
+            " errno=" << strerror(errno) << endl;
+            continue;
+        }
+
+        diskread = bufferFile(dirName.c_str(), filename, filenastiness, &len);
     }
-  
-    if (outputFile.fclose() == 0 ) {
-       cout << "Finished writing file " << outputpath.c_str() <<endl;
-    } else {
-      cerr << "Error closing output file " << outputpath.c_str() << 
-	      " errno=" << strerror(errno) << endl;
-      exit(16);
-    }
+
+    if (numRetried == MAX_RETRIES) fprintf(stderr, "WRITE FAILED: %s after %d tries.\n", filename, numRetried);
+
+    free(diskread);
 }
 
 
@@ -457,13 +453,10 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
     assert(incomingPacket != NULL);
     
     cout << "In rename or remove\n";
-    
-    NASTYFILE file(filenastiness);
     ChecksumComparisonPacket *comparisonPacket = reinterpret_cast<ChecksumComparisonPacket *>(incomingPacket);
     string fullPath = makeFileName(dirName, filename);
     string tempFullPath = fullPath + "-TMP";
 
-    // TODO: check if the filename matches with current file
     if (strcmp((char *) filename, comparisonPacket->filename) != 0){
         cout << memcmp((char *) filename, comparisonPacket->filename, FILENAME_LEN);
         fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, comparisonPacket->filename);
@@ -475,17 +468,15 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
         *GRADING << "File: " << filename << " end-to-end check succeeded" << endl;
     
         cout << "Renaming" << endl;
-        string fullPath = dirName + '/' + filename;
 
         // check if rename success
-        // retry if failed?
         if (rename(tempFullPath.c_str(), fullPath.c_str()) != 0) {
             fprintf(stderr, "Error renaming file %s to %s\n", tempFullPath.c_str(), fullPath.c_str());
         } else {
             cout << "File renamed successfully" << endl;
         }
-    } else {      
-        *GRADING << "File: " << filename << " end-to-end check failed" << endl;                    // remove
+    } else {                                    // remove
+        *GRADING << "File: " << filename << " end-to-end check failed" << endl;                    
         cout << "Removing" << endl;
         if (remove(tempFullPath.c_str()) != 0) {
             fprintf(stderr, "Unable to remove the file\n");
@@ -505,12 +496,9 @@ void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     FinishPacket finishPacket;
 
     memcpy(finishPacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, finishPacket.filename) << endl;
-    cout << finishPacket.packetType << " " << finishPacket.filename << endl;
     memcpy(outgoingFinishPacket, &finishPacket, sizeof(finishPacket));
 
     // write
-    cout << "write len " <<  outgoingFinishPacket << endl;
     sock -> write(outgoingFinishPacket, MAX_PACKET_LEN);
     printf("Sent finish packet for file %s\n", filename);
 }
@@ -540,7 +528,6 @@ bool validatePacket(char incomingPacket[], char filename[], int readlen) {
     }
 
     // validate filename
-    // TODO: abort when filename unseen?
     getFilename(incomingPacket, receivedFilename);
     if (strcmp(filename, "") != 0 && strcmp(receivedFilename, filename) != 0) { 
         fprintf(stderr,"Should be receiving packet for file %s but received packets for file %s instead.\n", filename, receivedFilename);

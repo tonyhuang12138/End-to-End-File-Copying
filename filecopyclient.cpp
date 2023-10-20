@@ -26,6 +26,8 @@
 //       checking-if-a-file-is-a-directory-or-just-a-file
 //     - https://stackoverflow.com/questions/2745074/
 //       fast-ceiling-of-an-integer-division-in-c-c
+//     - https://stackoverflow.com/questions/9370945/
+//       finding-the-max-value-in-a-map
 //
 
 
@@ -42,10 +44,12 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <assert.h>
-#include <vector>
 #include "sha1.h"
 #include "nastyfileio.h"
-// #include <string.h>
+#include <string.h>
+#include <vector>
+#include <unordered_map>
+
 
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
@@ -65,6 +69,10 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
 void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
                int filenastiness, size_t numTotalChunks, size_t currChunkNum, 
                int numPacketsInChunk);
+unsigned char *findMostFrequentData(string sourceName, size_t offset, 
+                                    size_t readAmount, int filenastiness);
+unsigned char *extractDataFromFile(string sourceName, size_t offset, 
+                                   size_t readAmount, int filenastiness);
 char *sendDataPacket(C150DgmSocket *sock, string filename, 
                               string dirName, int filenastiness, 
                               size_t currChunkNum, int currPacketNum);
@@ -96,17 +104,17 @@ const int srcdirArg = 4;                  // srcdir is 4th arg
 
   
 int main(int argc, char *argv[]) {
+    //
+    //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
+    //
+    GRADEME(argc, argv);
+
     // validate input format
     if (argc != 5) {
         fprintf(stderr,"Correct syntax is: %s <server> <networknastiness> <filenastiness> <srcdir>\n", argv[0]);
         exit(1);
     }
 
-    //
-    //  DO THIS FIRST OR YOUR ASSIGNMENT WON'T BE GRADED!
-    //
-    GRADEME(argc, argv);
-    
     int networknastiness = atoi(argv[networknastinessArg]); 
     int filenastiness = atoi(argv[filenastinessArg]);
 
@@ -143,26 +151,18 @@ int main(int argc, char *argv[]) {
         }
 
         closedir(SRC);
-    }
-    //
-    //  Handle networking errors -- for now, just print message and give up!
-    //
-    catch (C150NetworkException& e) {
+    } catch (C150NetworkException& e) {
         // Write to debug log
         c150debug->printf(C150ALWAYSLOG,"Caught C150NetworkException: %s\n",
                         e.formattedExplanation().c_str());
         // In case we're logging to a file, write to the console too
-        cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation()\
+        cerr << argv[0] << ": caught C150NetworkException: " << e.formattedExplanation()
                         << endl;
     }
 
     return 0;
 }
 
-
-// void sendChunk() {
-//     // load chunk with packets
-// }
 
 // ------------------------------------------------------
 //
@@ -209,21 +209,17 @@ void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
 
-    // calculate number of chunks and packets in file
-    *fileSize = getFileSize(filename, dirName);
-    *numTotalPackets = (*fileSize + DATA_LEN - 1) / DATA_LEN; // see references up top
-    *numTotalChunks = (*numTotalPackets + CHUNK_SIZE - 1) / CHUNK_SIZE;
-    *numPacketsInLastChunk = *numTotalPackets % CHUNK_SIZE == 0 ? CHUNK_SIZE : *numTotalPackets % CHUNK_SIZE;
-    printf("%s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename, *fileSize, *numTotalPackets, *numTotalChunks, *numPacketsInLastChunk);
-
     // generating request packet
     BeginRequestPacket requestPacket;
-    requestPacket.fileSize = *fileSize;
-    requestPacket.numTotalPackets = *numTotalPackets;
-    requestPacket.numTotalChunks = *numTotalChunks;
+    requestPacket.fileSize = *fileSize = getFileSize(filename, dirName);
+    // see references up top
+    requestPacket.numTotalPackets = *numTotalPackets = (*fileSize + DATA_LEN - 1) / DATA_LEN; 
+    requestPacket.numTotalChunks = *numTotalChunks = (*numTotalPackets + CHUNK_SIZE - 1) / CHUNK_SIZE;
+    *numPacketsInLastChunk = *numTotalPackets % CHUNK_SIZE == 0 ? CHUNK_SIZE : *numTotalPackets % CHUNK_SIZE;
     memcpy(requestPacket.filename, filename, strlen(filename) + 1);
     memcpy(outgoingRequestPacket, &requestPacket, sizeof(requestPacket));
 
+    printf("%s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename, *fileSize, *numTotalPackets, *numTotalChunks, *numPacketsInLastChunk);
     printf("Begin request packet for %s generated\n", requestPacket.filename);
 
     sendAndRetry(sock, filename, outgoingRequestPacket, incomingResponsePacket, BEGIN_REQUEST_PACKET_TYPE, BEGIN_RESPONSE_PACKET_TYPE, SIZE_MAX);
@@ -276,22 +272,73 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
                               string dirName, int filenastiness, 
                               size_t currChunkNum, int currPacketNum) {
     char *outgoingDataPacket = (char *) malloc(sizeof(DataPacket));
-    unsigned char *buffer = (unsigned char *) malloc(DATA_LEN);
 
     string sourceName = makeFileName(dirName, filename);
     size_t fileSize = getFileSize(filename, dirName);
-    void *fopenretval;
-    size_t offset, readAmount, len;
-    NASTYFILE inputFile(filenastiness);
-    DataPacket dataPacket;
+    
+    size_t offset = (currChunkNum * CHUNK_SIZE + currPacketNum) * DATA_LEN;
+    size_t readAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
 
-    // TODO: put into extractFromFile()
-    // in a for loop, load into hashmap by first memcpy into arr of size readamount
-    // pick one with greatest frequency
+    printf("Generating data packet for file %s, chunk %ld, packet %d\n", filename.c_str(), currChunkNum, currPacketNum);
+    
+    // TODO: compare cache with disk?
+    unsigned char *dataBuffer = findMostFrequentData(sourceName, offset, readAmount, filenastiness);
+
+    // generating data packet
+    DataPacket dataPacket;
+    dataPacket.chunkNumber = currChunkNum;
+    dataPacket.packetNumber = currPacketNum;
+    memcpy(dataPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
+    memcpy(dataPacket.data, dataBuffer, readAmount); // TODO: +1?
+    memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
+
+    sock -> write(outgoingDataPacket, MAX_PACKET_LEN);
+    free(dataBuffer);
+
+    return outgoingDataPacket;
+}
+
+
+unsigned char *findMostFrequentData(string sourceName, size_t offset, 
+                                    size_t readAmount, int filenastiness) {
+    unsigned char *dataBuffer = (unsigned char *) malloc(readAmount);
+    unsigned char *extractedData;
+    unordered_map<string, int> frequencyCount;
+    int currentMax = 0;
+    string mode;
+
+    // sample data MAX_SAMPLES times
+    for (int i = 0; i < MAX_SAMPLES; i++) {
+        extractedData = extractDataFromFile(sourceName, offset, readAmount, filenastiness);
+        string key(extractedData, extractedData + readAmount);
+        frequencyCount[key]++;
+
+        free(extractedData);
+    }
+
+    // find mode (see references)
+    for (auto it = frequencyCount.cbegin(); it != frequencyCount.cend(); ++it) {
+        if (it ->second > currentMax) {
+            mode = it->first;
+            currentMax = it->second;
+        }
+    }
+    std::cout << "DATA MODE: " << mode << " appears " << currentMax << " times\n";
+
+    memcpy(dataBuffer, mode.data(), readAmount);
+
+    return dataBuffer;
+}
+
+
+unsigned char *extractDataFromFile(string sourceName, size_t offset, 
+                                   size_t readAmount, int filenastiness) {
+    NASTYFILE inputFile(filenastiness);
+    unsigned char *buffer = (unsigned char *) malloc(readAmount);
+    void *fopenretval;
+    size_t len;
 
     // open file
-    printf("Generating data packet for file %s, chunk %ld, packet %d\n", filename.c_str(), currChunkNum, currPacketNum);
-
     fopenretval = inputFile.fopen(sourceName.c_str(), "rb");
     if (fopenretval == NULL) {
       cerr << "Error opening input file " << sourceName << 
@@ -299,15 +346,11 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
       exit(12);
     }
     printf("File read succeeded\n");
-
-    offset = (currChunkNum * CHUNK_SIZE + currPacketNum) * DATA_LEN;
     printf("Offset is %ld\n", offset);
     printf("About to read\n");
     inputFile.fseek(offset, SEEK_SET);
 
     // read DATA_LEN bytes of data
-    // TOOD: < or <=?
-    readAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
     printf("Read amount is %ld\n", readAmount);
     len = inputFile.fread(buffer, 1, readAmount);
     if (len != readAmount) {
@@ -322,19 +365,7 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
       exit(16);
     }
 
-    // TODO: compare cache with disk?
-
-    // generating data packet
-    dataPacket.chunkNumber = currChunkNum;
-    dataPacket.packetNumber = currPacketNum;
-    memcpy(dataPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
-    memcpy(dataPacket.data, buffer, DATA_LEN); // TODO: +1?
-    memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
-
-    sock -> write(outgoingDataPacket, MAX_PACKET_LEN);
-    free(buffer);
-
-    return outgoingDataPacket;
+    return buffer;
 }
 
 
@@ -371,12 +402,6 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
 
         // resend all failed packets
         for (int i : failedPackets) {
-
-            DataPacket *dataPacket2 = reinterpret_cast<DataPacket *>(chunk[i]);
-            printf("Quadrupple checking inside resend: ");
-            printf("Unpacking packet %s, %ld, %d\n", dataPacket2->filename, dataPacket2->chunkNumber, dataPacket2->packetNumber);
-            printf("Verifying packet type: %d\n", dataPacket2->packetType);
-
             sock -> write(chunk[i], MAX_PACKET_LEN);
         }
 
@@ -438,8 +463,6 @@ void sendChecksumConfirmation(C150DgmSocket *sock, char filename[],
     comparisonPacket.comparisonResult = compareHash(filename, dirName, filenastiness, incomingResponsePacket);
 
     memcpy(comparisonPacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, comparisonPacket.filename) << endl;
-    cout << comparisonPacket.packetType << " " << comparisonPacket.filename << endl;
     memcpy(outgoingComparisonPacket, &comparisonPacket, sizeof(comparisonPacket));
 
     sendAndRetry(sock, filename, outgoingComparisonPacket, incomingFinishPacket, CS_COMPARISON_PACKET_TYPE, FINISH_PACKET_TYPE, SIZE_MAX);
@@ -464,7 +487,7 @@ bool compareHash(char filename[], string dirName,
         fprintf(stderr,"Should be receiving checksum response packet but packet of packetType %s received.\n", packetTypeStringMatch(receivedPacketType).c_str());
     }
     
-    unsigned char localChecksum[HASH_CODE_LENGTH];
+    unsigned char *localChecksum;
     ChecksumResponsePacket *responsePacket = reinterpret_cast<ChecksumResponsePacket *>(incomingResponsePacket);
 
     // check if the filename matches with current file
@@ -475,8 +498,7 @@ bool compareHash(char filename[], string dirName,
     }
         
     // compute local checksum
-    // TODO: sample over several times
-    sha1(filename, dirName, filenastiness,  localChecksum);
+    localChecksum = findMostFrequentSHA(filename, dirName, filenastiness);
 
     // compare checksums
     cout << "Comparing hash\n";
@@ -521,7 +543,7 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
 
     // receive packet
     printf("Receiving %s packet for file %s\n", expectedIncomingType.c_str(), filename);
-    // assert(CHECKSUM_PACKET_LEN == sizeof(incomingResponsePacket));
+
     readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
     timeout = sock -> timedout();
 
