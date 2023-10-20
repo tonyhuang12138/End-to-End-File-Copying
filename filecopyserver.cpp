@@ -155,7 +155,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
             case BEGIN_REQUEST_PACKET_TYPE:
                 printf(" * * * Begin request packet received. * * * \n");
                 requestPacketPacket = reinterpret_cast<BeginRequestPacket *>(incomingPacket);
-                
+
                 // start new file and initialize state variables
                 if (startOfFile) {
                     strcpy(currFilename, incomingFilename);
@@ -259,13 +259,11 @@ void sendBeginResponse(C150DgmSocket *sock, char filename[]) {
 
 void readDataPacket(DataPacket *dataPacket, bool bytemap[], 
                     size_t fileSize, unsigned char fileBuffer[]) {
-    // TODO: remove assert
     assert(dataPacket != NULL);
     assert(bytemap != NULL);
 
+    // flush if file was already freed
     if (fileBuffer == NULL) return;
-
-    printf("Data packet has chunk number %ld and packet number %d\n", dataPacket->chunkNumber, dataPacket->packetNumber);
 
     // skip write if already written
     if (bytemap[dataPacket->packetNumber] == true) return;
@@ -316,20 +314,15 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
                           string dirName, int filenastiness) {
     assert(sock != NULL);
     assert(filename != NULL);
-    
-    printf("In sendChecksumResponse with filename %s, directory name %s and file nastiness %d\n", filename, dirName.c_str(), filenastiness);
 
     char outgoingResponsePacket[MAX_PACKET_LEN];
     ChecksumResponsePacket responsePacket;
     unsigned char *checksum;
+
+    // generate filename for temporary file
     string tempFilename = filename;
     tempFilename += "-TMP";
 
-    printf("Original filename is %s, adjusted temp filename is %s\n", filename, tempFilename.c_str());
-
-    // set filename
-
-    cout << "Entering sha1\n";
     checksum = findMostFrequentSHA(tempFilename, dirName, filenastiness);
 
     // load struct with members and write to packet
@@ -354,21 +347,23 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
     if (fileBuffer == NULL) return;
 
     NASTYFILE outputFile(filenastiness);
-    string tempFilename = filename;
-    tempFilename += "-TMP";
-    string outputpath = makeFileName(dirName, tempFilename);
     void *fopenretval;
     size_t writeLen, readLen;
     int numRetried = 0;
     unsigned char *diskread = NULL;
     (void) fopenretval;
 
+    // generate filename for temporary file
+    string tempFilename = filename;
+    tempFilename += "-TMP";
+    string outputpath = makeFileName(dirName, tempFilename);
+
     // write a few more times if data was not correctly written
     while (diskread == NULL || ((writeLen != fileSize || readLen != fileSize || memcmp(fileBuffer, diskread, fileSize) != 0) && numRetried < MAX_RETRIES)) {
         numRetried++;
-
+        
+        // reset diskread pointer
         if (diskread != NULL) {
-            fprintf(stderr, "File write %s failed %d times\n", filename, numRetried);
             free(diskread);
             diskread = NULL;
         }
@@ -377,11 +372,13 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
         fopenretval = outputFile.fopen(outputpath.c_str(), "wb");  
         writeLen = outputFile.fwrite(fileBuffer, 1, fileSize);
 
+        // retry if write error
         if (writeLen != fileSize || outputFile.fclose() != 0) continue;
     
         diskread = bufferFile(dirName.c_str(), tempFilename, filenastiness, 
                               &readLen);
 
+        // retry if read error
         if (readLen != fileSize) continue;
     }
 
@@ -396,22 +393,21 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
     assert(filename != NULL);
     assert(incomingPacket != NULL);
     
-    cout << "In rename or remove\n";
     ChecksumComparisonPacket *comparisonPacket = reinterpret_cast<ChecksumComparisonPacket *>(incomingPacket);
+
+    // generate filename for temporary file
     string fullPath = makeFileName(dirName, filename);
     string tempFullPath = fullPath + "-TMP";
 
     if (strcmp((char *) filename, comparisonPacket->filename) != 0){
         cout << memcmp((char *) filename, comparisonPacket->filename, FILENAME_LEN);
         fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, comparisonPacket->filename);
-        return; // ??
+        return;
     }
 
     // check if file transfer was successful
     if (comparisonPacket->comparisonResult) {  // rename
         *GRADING << "File: " << filename << " end-to-end check succeeded" << endl;
-    
-        cout << "Renaming" << endl;
 
         // check if rename success
         if (rename(tempFullPath.c_str(), fullPath.c_str()) != 0) {
@@ -421,7 +417,7 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
         }
     } else {                                    // remove
         *GRADING << "File: " << filename << " end-to-end check failed" << endl;                    
-        cout << "Removing" << endl;
+
         if (remove(tempFullPath.c_str()) != 0) {
             fprintf(stderr, "Unable to remove the file\n");
 
@@ -470,6 +466,7 @@ bool validatePacket(char incomingPacket[], char filename[], int packetType,
     // validate size of received packet
     if (readlen == 0) return false;
 
+    // skip name check for begin packets as they provide a new filename
     if (packetType == BEGIN_REQUEST_PACKET_TYPE) return true;
 
     // validate filename
