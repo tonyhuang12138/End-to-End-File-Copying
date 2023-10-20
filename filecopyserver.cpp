@@ -141,35 +141,24 @@ void receivePackets(C150DgmSocket *sock, string dirName,
     BeginRequestPacket *requestPacketPacket;
     DataPacket *dataPacket;
     ChunkCheckRequestPacket *requestPacket;
-
-    
-    cout << "INITIAL BYTEMAP: Printing out bytemap for chunk " << currChunkNum << " : ";
-    for (bool b: bytemap) {
-        printf("%s ", b ? "true" : "false");
-    }
-    cout << endl;
     
     // listen forever
     while (1) {
-        // validate size of received packet
         readlen = sock -> read(incomingPacket, MAX_PACKET_LEN);
-
-        // validate filename: not here!
-        getFilename(incomingPacket, incomingFilename);
-        printf("Received packet of filename %s\n", incomingFilename);
 
         // validate packet invariants
         packetType = getPacketType(incomingPacket);
+        getFilename(incomingPacket, incomingFilename);
         if (!validatePacket(incomingPacket, currFilename, packetType, readlen)) continue;
 
         switch (packetType) {
             case BEGIN_REQUEST_PACKET_TYPE:
                 printf(" * * * Begin request packet received. * * * \n");
                 requestPacketPacket = reinterpret_cast<BeginRequestPacket *>(incomingPacket);
-                // start new file
+                
+                // start new file and initialize state variables
                 if (startOfFile) {
                     strcpy(currFilename, incomingFilename);
-
                     fileSize = requestPacketPacket->fileSize;
                     numTotalPackets = requestPacketPacket->numTotalPackets;
                     numTotalChunks = requestPacketPacket->numTotalChunks;
@@ -179,7 +168,6 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                     memset(bytemap, 0, CHUNK_SIZE);
 
                     *GRADING << "File: " << currFilename << " starting to receive file, expecting a total of " << numTotalPackets << " data packets delivered in " << numTotalChunks << " chunks of size " << CHUNK_SIZE << endl;
-
                 }
                 sendBeginResponse(sock, currFilename);
                 break;
@@ -190,65 +178,39 @@ void receivePackets(C150DgmSocket *sock, string dirName,
 
                 // validate chunk number
                 if (dataPacket->chunkNumber < currChunkNum) {
-                    printf("FLUSHING: should be receiving data of chunk number %ld but received %ld instead\n", currChunkNum, dataPacket->chunkNumber);
                     continue;
                 } else if (dataPacket->chunkNumber > currChunkNum) {
                     memset(bytemap, 0, CHUNK_SIZE);
                     currChunkNum++;
-                    printf("NEW CHUNK: start receiving data for new chunk %ld\n", currChunkNum);
                 }
 
-                printf("FILENAME: packet has filename %s\n", dataPacket->filename);
-
-                // write to buffer
+                // write data to buffer
                 readDataPacket(dataPacket, bytemap, fileSize, fileBuffer);
-
-                printf("Double checking flipping result: %d\n", bytemap[dataPacket->packetNumber]);
-
-                cout << "Printing out bytemap for chunk " << currChunkNum << " : ";
-                for (bool b: bytemap) {
-                    printf("%s ", b ? "true" : "false");
-                }
-                cout << endl;
-
                 break;
 
             case CC_REQUEST_PACKET_TYPE:
                 printf(" * * * Chunk check request packet received. * * * \n");
                 requestPacket = reinterpret_cast<ChunkCheckRequestPacket *>(incomingPacket);
-                printf("Current chunk number is: %ld\n", currChunkNum);
 
                 // validate chunk number
-                if (requestPacket->chunkNumber != currChunkNum) {
-                    printf("Error: should be receiving chunk check request of  chunk number %ld but received %ld instead\n", currChunkNum, requestPacket->chunkNumber);
-                    continue;
-                }
+                if (requestPacket->chunkNumber != currChunkNum) continue;
 
+                // process chunk check request and respond accordingly
                 sendChunkCheckResponse(sock, bytemap, requestPacket);
-
-                printf("BYTEMAP - after chunk check response: ");
-                cout << "Printing out bytemap for chunk " << currChunkNum << " : ";
-                for (bool b: bytemap) {
-                    printf("%s ", b ? "true" : "false");
-                }
-                cout << endl;
-
                 break;
 
             case CS_REQUEST_PACKET_TYPE:
                 printf(" * * * Checksum request packet received. * * * \n");
                 
-                // TODO: can we have duplicates logs?
                 *GRADING << "File: " << currFilename << " received, beginning end-to-end check" << endl;
                 
                 // flush if already written and freed
                 if (fileBuffer == NULL) break;
 
-                // TODO: add if not written before
                 writeFileBufferToDisk(currFilename, dirName, filenastiness,fileSize, fileBuffer);
-                sendChecksumResponse(sock, currFilename, dirName, filenastiness);
 
-                printf("Sent checksum packet for file %s\n", currFilename);
+                // process checksum request and respond accordingly
+                sendChecksumResponse(sock, currFilename, dirName, filenastiness);
                 break;
 
             case CS_COMPARISON_PACKET_TYPE: 
@@ -260,11 +222,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 sendFinishPacket(sock, currFilename);
 
                 // reset state variables
-                printf("VERIFY: filename reset from %s ", currFilename);
-                // strcpy(currFilename, "");
-                printf("to %s\n", currFilename);
                 if (fileBuffer != NULL) {
-                    cout << "Freeing" << endl;
                     free(fileBuffer);
                     fileBuffer = NULL;
                 }
