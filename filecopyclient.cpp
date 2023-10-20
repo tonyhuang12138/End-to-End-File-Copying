@@ -54,7 +54,8 @@
 using namespace std;          // for C++ std library
 using namespace C150NETWORK;  // for all the comp150 utilities 
 
-#define MAX_RETRIES 20
+#define MAX_FILE_RETRIES 5
+#define MAX_PKT_RETRIES 20
 #define MAX_CHUNK_RETRIES 20
 #define MAX_FLUSH_RETRIES 15
 #define MAX_RESENDS 20
@@ -63,9 +64,9 @@ using namespace C150NETWORK;  // for all the comp150 utilities
 
 // file copy functions
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
-              int filenastiness);
+              int filenastiness, int attempt);
 void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
-                      size_t *fileSize, size_t *numTotalPackets, 
+                      size_t *fileSize, size_t *numTotalPackets, int attempt,
                       size_t *numTotalChunks, int *numPacketsInLastChunk);
 void sendChunk(C150DgmSocket *sock, string filename, string dirName, 
                int filenastiness, size_t numTotalChunks, size_t currChunkNum, 
@@ -84,11 +85,11 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
 // end to end functions
 void sendChecksumRequest(C150DgmSocket *sock, char filename[], 
                          char incomingResponsePacket[]);
-void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
-                              string dirName, int filenastiness, 
+bool sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
+                              string dirName, int filenastiness, int attempt,
                               char incomingResponsePacket[]);
-bool compareHash(char filename[], string dirName, 
-                 int filenastiness, char incomingResponsePacket[]);
+bool compareHash(char filename[], string dirName, int filenastiness, 
+                 char incomingResponsePacket[], int attempt);
 void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[], 
                   char incomingPacket[], int outgoingPacketType, 
                   int incomingPacketType, size_t currChunkNum);
@@ -133,6 +134,9 @@ int main(int argc, char *argv[]) {
         }
 
         // loop through all filenames in src dir
+        char incomingResponsePacket[MAX_PACKET_LEN];
+        bool transferSuccess = false;
+        int numRetried = 0;
         while (dirent *f = readdir(SRC)) {
             char path[500];
 
@@ -143,12 +147,18 @@ int main(int argc, char *argv[]) {
                 continue; 
             }
             
-            copyFile(sock, f->d_name, argv[srcdirArg], filenastiness);
+            while (transferSuccess == false && numRetried < MAX_FILE_RETRIES) {
+                numRetried++;
 
-            // end to end
-            char incomingResponsePacket[MAX_PACKET_LEN];
-            sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
-            sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, incomingResponsePacket);
+                copyFile(sock, f->d_name, argv[srcdirArg], filenastiness, numRetried);
+
+                // end to end
+                sendChecksumRequest(sock, f->d_name, incomingResponsePacket);
+                transferSuccess = sendChecksumConfirmation(sock, f->d_name, argv[srcdirArg], filenastiness, numRetried, incomingResponsePacket);
+            }
+
+            transferSuccess = false;
+            numRetried = 0;
         }
 
         closedir(SRC);
@@ -173,11 +183,11 @@ int main(int argc, char *argv[]) {
 //     
 // ------------------------------------------------------
 void copyFile(C150DgmSocket *sock, string filename, string dirName,  
-              int filenastiness) {
+              int filenastiness, int attempt) {
     size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
 
-    sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, &numTotalPackets, &numTotalChunks, &numPacketsInLastChunk);
+    sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, &numTotalPackets, attempt, &numTotalChunks, &numPacketsInLastChunk);
 
     printf("Verifying: %s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
     
@@ -200,12 +210,12 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
 
 
 void sendBeginRequest(C150DgmSocket *sock, char filename[], string dirName,
-                      size_t *fileSize, size_t *numTotalPackets, 
+                      size_t *fileSize, size_t *numTotalPackets, int attempt,
                       size_t *numTotalChunks, int *numPacketsInLastChunk) {
     assert(sock != NULL);
     assert(filename != NULL);
     
-    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << 0 << ">" << endl;
+    *GRADING << "File: " << filename << ", beginning transmission, attempt <" << attempt << ">" << endl;
 
     char outgoingRequestPacket[MAX_PACKET_LEN];
     char incomingResponsePacket[MAX_PACKET_LEN];
@@ -394,13 +404,6 @@ void resendFailedPackets(C150DgmSocket *sock, char incomingResponsePacket[],
             }
         }
 
-        if (failedPackets.size() > 0) {
-            fprintf(stderr, "Error: %ld packets failed.\n", failedPackets.size());
-            *GRADING << "File: " << responsePacket->filename << ", chunk (" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber+1 << " of " << numTotalChunks << " total chunks write FAILED, with " << failedPackets.size() << " packets failing. Retry attempt " << numRetried << endl;
-        } else {
-            *GRADING << "File: " << responsePacket->filename << ", chunk (" << CHUNK_SIZE << " packets) number " << responsePacket->chunkNumber+1 << " of " << numTotalChunks << " total chunks write SUCCEEDED." << endl;
-        }
-
         // resend all failed packets
         for (int i : failedPackets) {
             sock -> write(chunk[i], MAX_PACKET_LEN);
@@ -451,22 +454,26 @@ void sendChecksumRequest(C150DgmSocket *sock, char filename[],
 }
 
 
-void sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
-                              string dirName, int filenastiness, 
+bool sendChecksumConfirmation(C150DgmSocket *sock, char filename[], 
+                              string dirName, int filenastiness, int attempt,
                               char incomingResponsePacket[]) {
     assert(sock != NULL);
     assert(filename != NULL);
+
+    bool transferSuccess;
     
     char outgoingComparisonPacket[MAX_PACKET_LEN];
     char incomingFinishPacket[MAX_PACKET_LEN];
     ChecksumComparisonPacket comparisonPacket;
 
-    comparisonPacket.comparisonResult = compareHash(filename, dirName, filenastiness, incomingResponsePacket);
+    transferSuccess = comparisonPacket.comparisonResult = compareHash(filename, dirName, filenastiness, incomingResponsePacket, attempt);
 
     memcpy(comparisonPacket.filename, filename, strlen(filename) + 1);
     memcpy(outgoingComparisonPacket, &comparisonPacket, sizeof(comparisonPacket));
 
     sendAndRetry(sock, filename, outgoingComparisonPacket, incomingFinishPacket, CS_COMPARISON_PACKET_TYPE, FINISH_PACKET_TYPE, SIZE_MAX);
+
+    return transferSuccess;
 }
 
 
@@ -478,8 +485,8 @@ void sendChecksumConfirmation(C150DgmSocket *sock, char filename[],
 //  computed checksum
 //     
 // --------------------------------------------------------------------------
-bool compareHash(char filename[], string dirName, 
-                 int filenastiness, char incomingResponsePacket[]) {
+bool compareHash(char filename[], string dirName, int filenastiness, 
+                 char incomingResponsePacket[], int attempt) {
     cout << "In compare hash\n";
 
     // TODO: remove
@@ -519,11 +526,11 @@ bool compareHash(char filename[], string dirName,
     cout << "Comparing hash\n";
     if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
         printf("End to end succeeded for file %s\n", filename);
-        *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << 0 << endl;
+        *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << attempt << endl;
         return true;
     } else {
         printf("End to end failed for file %s\n", filename);
-        *GRADING << "File: " << filename << " end-to-end check failed, attempt " << 0 << endl;
+        *GRADING << "File: " << filename << " end-to-end check failed, attempt " << attempt << endl;
         return false;
     }
 
@@ -567,8 +574,8 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     // retry if validation failed
     if (!timeout) validatePacket(incomingPacket, incomingPacketType, filename, readlen, &timeout, &numRetried, &numFlushed, false, currChunkNum);
     
-    // keep resending message up to MAX_RETRIES times when read timedout
-    while (timeout == true && numRetried < MAX_RETRIES && numFlushed < MAX_FLUSH_RETRIES) {
+    // keep resending message up to MAX_PKT_RETRIES times when read timedout
+    while (timeout == true && numRetried < MAX_PKT_RETRIES && numFlushed < MAX_FLUSH_RETRIES) {
         numRetried++;
 
         // send again
@@ -584,7 +591,7 @@ void sendAndRetry(C150DgmSocket *sock, char filename[], char outgoingPacket[],
     }
 
     // throw exception if all retries exceeded
-    if (numRetried == MAX_RETRIES) throw C150NetworkException("Timed out after 5 retries.");
+    if (numRetried == MAX_PKT_RETRIES) throw C150NetworkException("Timed out after 5 retries.");
 }
 
 // --------------------------------------------------------------------------

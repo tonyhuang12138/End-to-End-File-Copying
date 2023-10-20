@@ -254,7 +254,7 @@ void receivePackets(C150DgmSocket *sock, string dirName,
                 printf(" * * * Checksum comparison packet received. * * * \n");
 
                 // perform necessary filename checks
-                // renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
+                renameOrRemove(currFilename, dirName, filenastiness, incomingPacket);
 
                 sendFinishPacket(sock, currFilename);
 
