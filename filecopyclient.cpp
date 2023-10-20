@@ -142,9 +142,7 @@ int main(int argc, char *argv[]) {
             sprintf(path, "%s/%s", argv[srcdirArg], f->d_name);
 
             // skip all subdirectories
-            if (!f->d_name || isDirectory(path)) {
-                continue; 
-            }
+            if (!f->d_name || isDirectory(path)) continue; 
             
             while (transferSuccess == false && numRetried < MAX_FILE_RETRIES) {
                 numRetried++;
@@ -186,7 +184,9 @@ void copyFile(C150DgmSocket *sock, string filename, string dirName,
     size_t fileSize, numTotalPackets, numTotalChunks, currChunkNum = 0;
     int numPacketsInLastChunk, numRetried = 0;
 
-    sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, &numTotalPackets, attempt, &numTotalChunks, &numPacketsInLastChunk);
+    sendBeginRequest(sock, (char *) filename.c_str(), dirName, &fileSize, 
+                     &numTotalPackets, attempt, &numTotalChunks, 
+                     &numPacketsInLastChunk);
 
     printf("Verifying: %s: total size is %ld, number of packets is %ld and number of chunks is %ld. The last chunk has %d packets\n", filename.c_str(), fileSize, numTotalPackets, numTotalChunks, numPacketsInLastChunk);
     
@@ -291,7 +291,6 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
 
     printf("Generating data packet for file %s, chunk %ld, packet %d\n", filename.c_str(), currChunkNum, currPacketNum);
     
-    // TODO: compare cache with disk?
     unsigned char *dataBuffer = findMostFrequentData(sourceName, offset, readAmount, filenastiness);
 
     // generating data packet
@@ -299,7 +298,7 @@ char *sendDataPacket(C150DgmSocket *sock, string filename,
     dataPacket.chunkNumber = currChunkNum;
     dataPacket.packetNumber = currPacketNum;
     memcpy(dataPacket.filename, filename.c_str(), strlen(filename.c_str()) + 1);
-    memcpy(dataPacket.data, dataBuffer, readAmount); // TODO: +1?
+    memcpy(dataPacket.data, dataBuffer, readAmount); 
     memcpy(outgoingDataPacket, &dataPacket, sizeof(dataPacket));
 
     sock -> write(outgoingDataPacket, MAX_PACKET_LEN);
@@ -484,10 +483,9 @@ bool compareHash(char filename[], string dirName, int filenastiness,
                  char incomingResponsePacket[], int attempt) {
     cout << "In compare hash\n";
 
-    // TODO: remove
-    int receivedPacketType = getPacketType(incomingResponsePacket);
-    if (receivedPacketType != CS_RESPONSE_PACKET_TYPE) { 
-        fprintf(stderr,"Should be receiving checksum response packet but packet of packetType %s received.\n", packetTypeStringMatch(receivedPacketType).c_str());
+    // flush wrong packe type
+    if (getPacketType(incomingResponsePacket) != CS_RESPONSE_PACKET_TYPE) {
+        return false; 
     }
     
     unsigned char *localChecksum;
@@ -497,7 +495,7 @@ bool compareHash(char filename[], string dirName, int filenastiness,
     if (strcmp(filename, responsePacket->filename) != 0){
         cout << memcmp(filename, responsePacket->filename, FILENAME_LEN);
         fprintf(stderr,"Filename inconsistent when comparing hash. Expected file %s but received file %s\n", filename, responsePacket->filename);
-        return false; // ??
+        return false;
     }
         
     // compute local checksum
@@ -520,11 +518,9 @@ bool compareHash(char filename[], string dirName, int filenastiness,
     // compare checksums
     cout << "Comparing hash\n";
     if (memcmp(localChecksum, responsePacket->checksum, HASH_CODE_LENGTH) == 0) {
-        printf("End to end succeeded for file %s\n", filename);
         *GRADING << "File: " << filename << " end-to-end check succeeded, attempt " << attempt << endl;
         return true;
     } else {
-        printf("End to end failed for file %s\n", filename);
         *GRADING << "File: " << filename << " end-to-end check failed, attempt " << attempt << endl;
         return false;
     }

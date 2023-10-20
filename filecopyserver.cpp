@@ -289,12 +289,11 @@ void sendBeginResponse(C150DgmSocket *sock, char filename[]) {
     char outgoingResponsePacket[MAX_PACKET_LEN];
     BeginResponsePacket responsePacket;
 
+    // load struct with members and write to packet
     memcpy(responsePacket.filename, filename, strlen(filename) + 1);
-    cout << "strcmp " << strcmp(filename, responsePacket.filename) << endl;
-    cout << responsePacket.packetType << " " << responsePacket.filename << endl;
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
 
-    // write
+    // send packet to server
     sock -> write(outgoingResponsePacket, MAX_PACKET_LEN);
     printf("Sent begin response packet for file %s\n", filename);
 }
@@ -313,17 +312,13 @@ void readDataPacket(DataPacket *dataPacket, bool bytemap[],
     // skip write if already written
     if (bytemap[dataPacket->packetNumber] == true) return;
 
-    // write to buffer
+    // write data to buffer
     size_t offset = (dataPacket->chunkNumber * CHUNK_SIZE + dataPacket->packetNumber) * DATA_LEN;
     size_t writeAmount = (offset + DATA_LEN < fileSize) ? DATA_LEN : fileSize - offset;
-
-    printf("OFFSET: %ld and write amount: %ld\n", offset, writeAmount);
     memcpy(fileBuffer + offset, dataPacket->data, writeAmount);
 
-    printf("Flipping byte in byte map: %d\n", dataPacket->packetNumber);
-    printf("Before flipping %d\n", bytemap[dataPacket->packetNumber]);
     bytemap[dataPacket->packetNumber] = true;
-    printf("After flipping %d\n", bytemap[dataPacket->packetNumber]);
+
     printf("Finish readDataPacket\n");
 }
 
@@ -338,24 +333,14 @@ void sendChunkCheckResponse(C150DgmSocket *sock, bool *bytemap,
     char chunkCheck[CHUNK_SIZE]; 
     ChunkCheckResponsePacket responsePacket;
 
-    // check if all packets had been delivered
-    printf("In chunk check response, printing results: ");
-    for (int i = 0; i < requestPacket->numPacketsInChunk; i++) {
-        if (bytemap[i] != true) {
-            printf("Packet failed: %d\n", i);
-            break;
-        }
-        cout << bytemap[i];
-    }
-    cout << endl;
-
-    // set filename
+    // load struct with members and write to packet
     memcpy(responsePacket.filename, requestPacket->filename, strlen(requestPacket->filename) + 1);
     memcpy(responsePacket.chunkCheck, bytemap, CHUNK_SIZE);
     responsePacket.chunkNumber = requestPacket->chunkNumber;
     responsePacket.numPacketsInChunk = requestPacket->numPacketsInChunk;
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
     
+    // send packet to server
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
 
     printf("Sent chunk check response for %s\n", responsePacket.filename);
@@ -385,14 +370,16 @@ void sendChecksumResponse(C150DgmSocket *sock, char filename[],
     printf("Original filename is %s, adjusted temp filename is %s\n", filename, tempFilename.c_str());
 
     // set filename
-    memcpy(responsePacket.filename, filename, strlen(filename) + 1);
 
     cout << "Entering sha1\n";
     checksum = findMostFrequentSHA(tempFilename, dirName, filenastiness);
 
+    // load struct with members and write to packet
+    memcpy(responsePacket.filename, filename, strlen(filename) + 1);
     memcpy(responsePacket.checksum, checksum, HASH_CODE_LENGTH);
     memcpy(outgoingResponsePacket, &responsePacket, sizeof(responsePacket));
 
+    // send packet to server
     sock->write(outgoingResponsePacket, MAX_PACKET_LEN);
 
     free(checksum);
@@ -405,16 +392,8 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
                            size_t fileSize, unsigned char *fileBuffer) {
     assert(filename != NULL);
 
+    // flush message if buffer was already freed
     if (fileBuffer == NULL) return;
-
-    if (strcmp(filename, ".hi") == 0) {
-        cerr << "SPECIAL: ";
-        for (int i = 0; i < 15; i++) {
-            cerr << fileBuffer[i];
-        }
-        cerr << endl;
-        fprintf(stderr, "SPECIAL: '%s' %s file size should be %ld\n", fileBuffer, filename, fileSize);
-    }
 
     NASTYFILE outputFile(filenastiness);
     string tempFilename = filename;
@@ -426,6 +405,7 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
     unsigned char *diskread = NULL;
     (void) fopenretval;
 
+    // write a few more times if data was not correctly written
     while (diskread == NULL || ((writeLen != fileSize || readLen != fileSize || memcmp(fileBuffer, diskread, fileSize) != 0) && numRetried < MAX_RETRIES)) {
         numRetried++;
 
@@ -434,32 +414,17 @@ void writeFileBufferToDisk(char filename[], string dirName, int filenastiness,
             free(diskread);
             diskread = NULL;
         }
-
+    
+        // open and write entire file
         fopenretval = outputFile.fopen(outputpath.c_str(), "wb");  
-    
-        // write entire file
         writeLen = outputFile.fwrite(fileBuffer, 1, fileSize);
-        fprintf(stdout, "Writelen is %ld and file size shoudl be %ld\n", writeLen, fileSize);
-        if (writeLen != fileSize) {
-            fprintf(stderr, "Expecting write len of %ld but wrote %ld\n", fileSize, writeLen);
-            continue;
-        }
+
+        if (writeLen != fileSize || outputFile.fclose() != 0) continue;
     
-        if (outputFile.fclose() == 0 ) {
-        cout << "Finished writing file " << outputpath.c_str() <<endl;
-        } else {
-        cerr << "Error closing output file " << outputpath.c_str() << 
-            " errno=" << strerror(errno) << endl;
-            continue;
-        }
+        diskread = bufferFile(dirName.c_str(), tempFilename, filenastiness, 
+                              &readLen);
 
-        diskread = bufferFile(dirName.c_str(), tempFilename, filenastiness, &readLen);
-
-        fprintf(stdout, "Readlen is %ld and file size shoudl be %ld\n", readLen, fileSize);
-        if (readLen != fileSize) {
-            fprintf(stderr, "Expecting read len of %ld but read %ld\n", fileSize, readLen);
-            continue;
-        }
+        if (readLen != fileSize) continue;
     }
 
     if (numRetried == MAX_RETRIES) fprintf(stderr, "WRITE FAILED: %s after %d tries.\n", filename, numRetried);
@@ -512,14 +477,15 @@ void renameOrRemove(char filename[], string dirName, int filenastiness,
 void sendFinishPacket(C150DgmSocket *sock, char filename[]) {
     assert(sock != NULL);
     assert(filename != NULL);
-
+    
     char outgoingFinishPacket[MAX_PACKET_LEN];
     FinishPacket finishPacket;
 
+    // load struct with members and write to packet
     memcpy(finishPacket.filename, filename, strlen(filename) + 1);
     memcpy(outgoingFinishPacket, &finishPacket, sizeof(finishPacket));
 
-    // write
+    // send packet to server
     sock -> write(outgoingFinishPacket, MAX_PACKET_LEN);
     printf("Sent finish packet for file %s\n", filename);
 }
